@@ -1,6 +1,6 @@
 # Svaneholdet shift planning
 
-The first version lets a Smukfest team of more than 70 volunteers go from invitation to a staffed shift plan and recorded hours. Svaneholdet is the first organisation. From the start, the data model must hold several teams, each with its own members, roles and shift plans. The interface for several teams waits until after the pilot.
+The first version lets a Smukfest team of more than 70 volunteers go from invitation to a staffed shift plan and recorded hours. Svaneholdet is the first team. From the start, the data model must hold several teams, each with its own members, roles and shift plans. The interface for several teams waits until after the pilot.
 
 ## Technology
 
@@ -20,13 +20,13 @@ One Laravel app with no API between backend and frontend. Laravel handles routin
 
 ## First version
 
-### Organisations, roles and login
+### Teams, roles and login
 
-- A Smukfest team is an organisation. A user can be a member of several organisations and have a different role on each team. The data model and every policy account for this from the start. The page for switching organisations and the setup of new teams get built only when a second team needs them.
+- A user can be a member of several teams and have a different role on each team. The data model and every policy account for this from the start. A team switcher shows when a user has more than one team. New teams get created with an artisan command.
 - Start with the roles **volunteer** and **admin**. An admin can also take shifts. Both roles use the same signup, and the admin can approve and assign places as a separate action.
 - **Login is by a link sent by email**, not by password. The user enters their email and gets a time-limited, single-use link. On a phone the user stays logged in for a long time, so volunteers rarely have to log in again during the festival.
-- An admin creates an invitation with a name, email and role. The link in the invitation email activates the account and logs the person in with the same click. If the person already has an account, the membership is added to that account. The admin can resend the invitation, which expires the old link.
-- Create Svaneholdet, the first festival year and the first admin as part of setup.
+- An admin creates an invitation with a name and email. Every invitation makes the person a volunteer, and an admin promotes volunteers to admin afterwards. The link in the invitation email activates the account and logs the person in. If the person already has an account, the membership is added to that account. The admin can resend the invitation, which expires the old link.
+- `php artisan team:create` creates a team and its first admin. The first festival year comes with feature 2.
 
 ### Festival years
 
@@ -57,7 +57,7 @@ The rollout asks for:
 
 - On a shift with open signup, the member gets a confirmed place at once if there is free capacity. On a shift that needs approval, signing up creates a pending request, which an admin can approve or reject.
 - Pending requests are shown separately and only take a place when approved. Direct signup, approval and manual assignment check the number of places and save the change in the same database transaction, with a lock on the shift. That way two simultaneous actions can't both take the last place. A member can only have one active signup for the same shift. [Laravel Pessimistic Locking](https://laravel.com/framework/docs/13.x/queries#pessimistic-locking)
-- **Volunteers can cancel on their own until 48 hours before the shift.** After that they have to contact an admin, who can cancel for them. The deadline is a setting on the organisation.
+- **Volunteers can cancel on their own until 48 hours before the shift.** After that they have to contact an admin, who can cancel for them. The deadline is a setting on the team.
 - **The shift plan** shows shifts day by day with time, free places and clear signup actions. **My shifts** shows upcoming and past shifts with status and hours.
 
 ### Staffing and hours
@@ -72,19 +72,19 @@ The rollout asks for:
 | --- | --- |
 | User | Name and email |
 | Login link | User, single-use token, expiry and use |
-| Organisation | Team name, timezone and cancellation deadline |
-| Festival year | Organisation, name, first and last day |
-| Membership | User, organisation, role and access status |
-| Invitation | Organisation, recipient's name and email, role, expiry and redemption |
+| Team | Team name, timezone and cancellation deadline |
+| Festival year | Team, name, first and last day |
+| Membership | User, team, role and access status |
+| Invitation | Team, recipient's name and email, expiry, redemption and withdrawal |
 | Shift series | Festival year, title, period, and the pattern the series was rolled out with |
 | Shift | Festival year, optional shift series, title, planned start and end, capacity and approval setting |
 | Signup | Shift, membership, status, attendance and actual times |
 
-A signup connects a shift with a membership in the same organisation. That keeps the history when a member's access is removed. The shift plan and the hours overview can be filtered to a period within the festival year.
+A signup connects a shift with a membership in the same team. That keeps the history when a member's access is removed. The shift plan and the hours overview can be filtered to a period within the festival year.
 
 ## Build sequence
 
-1. **Access and invitations.** Set up Laravel with Livewire, Flux, Pest, Larastan and Pint. Build organisations, memberships, roles, mail-link login and invitations. Run a real invitation in a test environment from creation to first login. Use two organisations in the tests, so role and access are checked across them from the start.
+1. **Access and invitations.** Set up Laravel with Livewire, Flux, Pest, Larastan and Pint. Build teams, memberships, roles, mail-link login and invitations. Run a real invitation in a test environment from creation to first login. Use two teams in the tests, so role and access are checked across them from the start.
 2. **Festival years, rollout and self-service.** Build festival years, rollout with preview, shift series, the mobile-friendly day list and My shifts. Make direct signup, pending requests, approval and cancellation work end to end. Test rollout with 2 × 6 and 1 × 12 hours, a shift past midnight, several shifts on the same day, an admin on a shift, cancelling after the deadline, and two simultaneous attempts at the last place.
 3. **Day overview and hour registration.** Build the day count, the participant list with time editing, and history per volunteer. Check that two shifts on the same day count as one person, and that a shortened shift gives the right number of hours. Also test shifts past midnight and no-shows.
 4. **Pilot with Svaneholdet.** Set up email sending, HTTPS, backup and restore. Let a few admins and volunteers run the flow on their phones from invitation to hour registration. Use their feedback to adjust the navigation before the rest of the team is invited.
@@ -93,7 +93,7 @@ A signup connects a shift with a membership in the same organisation. That keeps
 
 | Topic | Proposal or question |
 | --- | --- |
-| Overlap | Should overlapping shifts for the same person be blocked or give a warning, also when they are in different organisations? |
+| Overlap | Should overlapping shifts for the same person be blocked or give a warning, also when they are in different teams? |
 | Approval | Should an admin be able to put themselves directly on a shift that otherwise needs approval? |
 | Changes after signup | Should the volunteer be notified when the time changes, the shift is cancelled, or a request is approved? How do we handle a new capacity below the number already confirmed, also when it changes for a whole shift series? |
 | Hours | Are breaks deducted, especially on 12-hour shifts? Will the hours be used for a minimum requirement or an export? |
