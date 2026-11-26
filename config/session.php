@@ -32,7 +32,7 @@ return [
     |
     */
 
-    'lifetime' => (int) env('SESSION_LIFETIME', 60 * 24 * 90),
+    'lifetime' => 60 * 24 * 90,
 
     'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
 
