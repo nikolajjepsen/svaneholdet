@@ -89,6 +89,14 @@ class User extends Authenticatable implements HasLocalePreference
     }
 
     /**
+     * Get the user's first name.
+     */
+    public function firstName(): string
+    {
+        return Str::of($this->name)->trim()->before(' ')->toString();
+    }
+
+    /**
      * Get the user's initials
      */
     public function initials(): string
