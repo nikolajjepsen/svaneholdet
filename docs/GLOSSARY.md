@@ -38,3 +38,29 @@ _Avoid_: Invite code, signup
 **Login link**:
 A short-lived, single-use link sent by email that logs a **User** in.
 _Avoid_: Magic link, token, password
+
+### Scheduling
+
+**Season**:
+One Smukfest that a **Team** plans for, such as Smukfest 2027. A **Team** has one current **Season**, and it is the only one **Volunteers** see.
+_Avoid_: Festival year, edition, event
+
+**Schedule**:
+A **Team**'s **Slots** in a **Season**, laid out day by day, where **Members** sign up.
+_Avoid_: Shift plan, day list, calendar
+
+**Slot**:
+A planned need for people on the **Schedule**: a start, an end and a **Capacity**. It can end the day after it starts.
+_Avoid_: Opening, position, interval
+
+**Slot series**:
+The **Slots** one rollout interval creates, one per picked date, which an **Admin** can change or delete together.
+_Avoid_: Shift series, pattern, recurrence
+
+**Capacity**:
+The number of **Volunteers** a **Slot** asks for. **Admins** may confirm more **Shifts** than the **Capacity**.
+_Avoid_: Places, seats, requested volunteers
+
+**Shift**:
+One **Member**'s place on one **Slot**. It is pending, confirmed, rejected or cancelled. A pending **Shift** is what people call a request, which an **Admin** confirms or rejects. An **Admin** assigning a **Member** creates a confirmed **Shift**.
+_Avoid_: Signup, booking, registration, approved
