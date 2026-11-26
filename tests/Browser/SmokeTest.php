@@ -50,7 +50,7 @@ it('lets a member request a fresh link from an expired link', function () {
 });
 
 it('lets an authenticated user log out from the dashboard', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->has(Membership::factory()->count(2))->create());
 
     visit('/dashboard')
         ->assertPathIs('/dashboard')

@@ -9,7 +9,7 @@ class StartSession extends LaravelStartSession
 {
     protected function storeCurrentUrl(Request $request, $session): void
     {
-        if (! $request->routeIs('login.confirm')) {
+        if (! $request->routeIs('login.confirm', 'invitations.confirm')) {
             parent::storeCurrentUrl($request, $session);
         }
     }
