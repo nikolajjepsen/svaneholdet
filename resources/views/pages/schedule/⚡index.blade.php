@@ -3,6 +3,7 @@
 use App\Auth\CurrentTeam;
 use App\Enums\ShiftStatus;
 use App\Models\Season;
+use App\Models\Shift;
 use App\Models\Slot;
 use App\Models\Team;
 use App\Models\User;
@@ -52,6 +53,8 @@ new class extends Component
         $this->team = $team;
         $this->teamId = $team->id;
         $this->date = now()->setTimezone($team->timezone)->format('Y-m-d');
+        $status = session('status');
+        $this->statusMessage = is_string($status) ? $status : null;
     }
 
     public function hydrate(CurrentTeam $currentTeam): void
@@ -146,6 +149,32 @@ new class extends Component
         $this->signUpWarnings = [];
     }
 
+    public function cancelShift(int $shiftId, Shifts $shifts): void
+    {
+        $this->statusMessage = null;
+
+        $shift = Shift::query()->with(['membership', 'slot.season'])->findOrFail($shiftId);
+        abort_unless($shift->membership->team_id === $this->teamId, 403);
+        Gate::authorize('cancel', $shift);
+
+        $shifts->cancel($shift, $this->user());
+
+        $this->statusMessage = __('Your shift has been cancelled.');
+    }
+
+    public function withdrawShift(int $shiftId, Shifts $shifts): void
+    {
+        $this->statusMessage = null;
+
+        $shift = Shift::query()->with(['membership', 'slot.season'])->findOrFail($shiftId);
+        abort_unless($shift->membership->team_id === $this->teamId, 403);
+        Gate::authorize('withdraw', $shift);
+
+        $shifts->withdraw($shift, $this->user());
+
+        $this->statusMessage = __('Your shift request has been withdrawn.');
+    }
+
     private function currentSeason(): ?Season
     {
         $this->team->loadMissing('currentSeason');
@@ -237,14 +266,26 @@ new class extends Component
 
         @if ($season !== null)
             @can('create', [\App\Models\Slot::class, $season])
-                <flux:button
-                    variant="primary"
-                    icon="plus"
-                    wire:click="$set('showCreateSlotModal', true)"
-                    data-test="open-create-slot"
-                >
-                    {{ __('Add slot') }}
-                </flux:button>
+                <div class="flex flex-wrap items-center gap-2">
+                    <flux:button
+                        variant="ghost"
+                        icon="squares-plus"
+                        :href="route('schedule.rollout')"
+                        wire:navigate
+                        data-test="open-rollout"
+                    >
+                        {{ __('Roll out slots') }}
+                    </flux:button>
+
+                    <flux:button
+                        variant="primary"
+                        icon="plus"
+                        wire:click="$set('showCreateSlotModal', true)"
+                        data-test="open-create-slot"
+                    >
+                        {{ __('Add slot') }}
+                    </flux:button>
+                </div>
             @endcan
         @endif
     </div>
@@ -255,9 +296,9 @@ new class extends Component
         </flux:callout>
     @endif
 
-    @if ($errors->has('slot'))
+    @if ($errors->has('slot') || $errors->has('shift'))
         <flux:callout icon="exclamation-circle" color="red" role="alert">
-            <flux:callout.text>{{ $errors->first('slot') }}</flux:callout.text>
+            <flux:callout.text>{{ $errors->first('slot') ?: $errors->first('shift') }}</flux:callout.text>
         </flux:callout>
     @endif
 
@@ -322,7 +363,7 @@ new class extends Component
                                         </flux:text>
                                     @endif
 
-                                    <div class="flex items-center justify-end gap-2">
+                                    <div class="flex flex-wrap items-center justify-end gap-2">
                                         @if ($isAdmin)
                                             <flux:button
                                                 variant="ghost"
@@ -334,14 +375,39 @@ new class extends Component
                                                 {{ __('Manage') }}
                                             </flux:button>
                                         @endif
-                                        @if ($memberShift !== null && $memberShift->status === ShiftStatus::Pending)
-                                            <flux:badge size="sm" color="amber" data-test="pending-slot-{{ $slot->id }}">
-                                                {{ __('Pending') }}
-                                            </flux:badge>
-                                        @elseif ($memberShift !== null)
+
+                                        @if ($memberShift !== null && $memberShift->status === ShiftStatus::Confirmed)
                                             <flux:badge size="sm" color="green" data-test="signed-up-slot-{{ $slot->id }}">
                                                 {{ __('Signed up') }}
                                             </flux:badge>
+
+                                            @if ($slot->isBeforeCancellationDeadline($team))
+                                                <flux:button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    wire:click="cancelShift({{ $memberShift->id }})"
+                                                    data-test="cancel-shift-{{ $memberShift->id }}"
+                                                >
+                                                    {{ __('Cancel shift') }}
+                                                </flux:button>
+                                            @else
+                                                <flux:text class="text-xs" data-test="contact-admin-to-cancel-slot-{{ $slot->id }}">
+                                                    {{ __('Contact an admin to cancel.') }}
+                                                </flux:text>
+                                            @endif
+                                        @elseif ($memberShift !== null && $memberShift->status === ShiftStatus::Pending)
+                                            <flux:badge size="sm" color="amber" data-test="pending-slot-{{ $slot->id }}">
+                                                {{ $memberShift->status->label() }}
+                                            </flux:badge>
+
+                                            <flux:button
+                                                variant="ghost"
+                                                size="sm"
+                                                wire:click="withdrawShift({{ $memberShift->id }})"
+                                                data-test="withdraw-shift-{{ $memberShift->id }}"
+                                            >
+                                                {{ __('Withdraw') }}
+                                            </flux:button>
                                         @elseif ($isFull && ! $shiftsRequireConfirmation)
                                             <flux:badge size="sm" color="zinc" data-test="full-slot-{{ $slot->id }}">
                                                 {{ __('Full') }}

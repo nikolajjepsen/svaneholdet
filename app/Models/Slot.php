@@ -28,6 +28,12 @@ class Slot extends Model
         return $this->belongsTo(Season::class);
     }
 
+    /** @return BelongsTo<SlotSeries, $this> */
+    public function series(): BelongsTo
+    {
+        return $this->belongsTo(SlotSeries::class, 'slot_series_id');
+    }
+
     /** @return HasMany<Shift, $this> */
     public function shifts(): HasMany
     {
@@ -49,6 +55,16 @@ class Slot extends Model
     public function plannedHours(): float
     {
         return round($this->starts_at->diffInMinutes($this->ends_at) / 60, 2);
+    }
+
+    public function cancellationDeadline(Team $team): CarbonImmutable
+    {
+        return $this->starts_at->subHours($team->settings->cancellationDeadlineHours);
+    }
+
+    public function isBeforeCancellationDeadline(Team $team, ?CarbonImmutable $at = null): bool
+    {
+        return ($at ?? now())->lessThanOrEqualTo($this->cancellationDeadline($team));
     }
 
     /** @return array<string, string> */

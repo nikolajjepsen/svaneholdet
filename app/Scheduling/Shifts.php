@@ -184,6 +184,58 @@ class Shifts
         return $result['shift'];
     }
 
+    public function cancel(Shift $shift, User $actor): Shift
+    {
+        return DB::transaction(function () use ($shift, $actor): Shift {
+            $lockedShift = Shift::query()
+                ->with(['membership', 'slot.season.team'])
+                ->lockForUpdate()
+                ->findOrFail($shift->id);
+
+            Gate::forUser($actor)->authorize('cancel', $lockedShift);
+
+            if ($lockedShift->status !== ShiftStatus::Confirmed) {
+                throw ValidationException::withMessages([
+                    'shift' => __('Only confirmed shifts can be cancelled.'),
+                ]);
+            }
+
+            if (! $lockedShift->slot->isBeforeCancellationDeadline($lockedShift->slot->season->team)) {
+                throw ValidationException::withMessages([
+                    'shift' => __('The cancellation deadline has passed. Contact an admin to cancel this shift.'),
+                ]);
+            }
+
+            $lockedShift->status = ShiftStatus::Cancelled;
+            $lockedShift->save();
+
+            return $lockedShift;
+        });
+    }
+
+    public function withdraw(Shift $shift, User $actor): Shift
+    {
+        return DB::transaction(function () use ($shift, $actor): Shift {
+            $lockedShift = Shift::query()
+                ->with('membership')
+                ->lockForUpdate()
+                ->findOrFail($shift->id);
+
+            Gate::forUser($actor)->authorize('withdraw', $lockedShift);
+
+            if ($lockedShift->status !== ShiftStatus::Pending) {
+                throw ValidationException::withMessages([
+                    'shift' => __('Only pending shifts can be withdrawn.'),
+                ]);
+            }
+
+            $lockedShift->status = ShiftStatus::Cancelled;
+            $lockedShift->save();
+
+            return $lockedShift;
+        });
+    }
+
     private function resolveActiveMembership(User $user, int $teamId): ?Membership
     {
         return $user->activeMemberships()
