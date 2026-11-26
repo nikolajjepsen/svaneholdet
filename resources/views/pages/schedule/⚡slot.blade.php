@@ -472,7 +472,7 @@ new class extends Component
 
     <flux:modal wire:model="showOverCapacityModal" class="w-full max-w-md" data-test="over-capacity-warning-modal">
         <div class="space-y-5">
-            <flux:heading size="lg">{{ __('Over capacity') }}</flux:heading>
+            <flux:heading size="lg">{{ __('Please confirm') }}</flux:heading>
 
             @foreach ($overCapacityWarnings as $warningIndex => $warning)
                 <flux:callout wire:key="over-capacity-warning-{{ $warningIndex }}" icon="exclamation-triangle" color="amber">

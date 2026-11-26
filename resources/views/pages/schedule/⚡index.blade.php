@@ -487,7 +487,7 @@ new class extends Component
 
     <flux:modal wire:model="showSignUpWarningModal" class="w-full max-w-md" data-test="sign-up-warning-modal">
         <div class="space-y-5">
-            <flux:heading size="lg">{{ __('Slot is full') }}</flux:heading>
+            <flux:heading size="lg">{{ __('Before you sign up') }}</flux:heading>
 
             @foreach ($signUpWarnings as $warningIndex => $warning)
                 <flux:callout wire:key="sign-up-warning-{{ $warningIndex }}" icon="exclamation-triangle" color="amber">
@@ -505,7 +505,7 @@ new class extends Component
                     wire:click="confirmSignUpWithWarnings"
                     data-test="confirm-sign-up-warning"
                 >
-                    {{ __('Send request') }}
+                    {{ $shiftsRequireConfirmation ? __('Send request') : __('Sign up anyway') }}
                 </flux:button>
             </div>
         </div>
