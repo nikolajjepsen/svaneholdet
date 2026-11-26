@@ -46,6 +46,12 @@ class Slot extends Model
         return $this->shifts()->where('status', ShiftStatus::Confirmed);
     }
 
+    /** @return HasMany<Shift, $this> */
+    public function pendingShifts(): HasMany
+    {
+        return $this->shifts()->where('status', ShiftStatus::Pending);
+    }
+
     public function plannedHours(): float
     {
         return round($this->starts_at->diffInMinutes($this->ends_at) / 60, 2);
