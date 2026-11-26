@@ -160,11 +160,18 @@ it('accepts zero hours as a valid cancellation deadline', function () {
 });
 
 it('shows only first names of confirmed volunteers on each slot when the names setting is on', function () {
-    $team = Team::factory()->create(['timezone' => 'Europe/Copenhagen']);
+    $team = Team::factory()->create([
+        'name' => 'Bar Team',
+        'timezone' => 'Europe/Copenhagen',
+    ]);
     $season = Season::factory()->for($team)->create();
     $team->update(['current_season_id' => $season->id]);
 
-    $viewer = User::factory()->create(['name' => 'Viewer Person', 'locale' => 'en']);
+    $viewer = User::factory()->create([
+        'name' => 'Viewer Person',
+        'email' => 'viewer@example.com',
+        'locale' => 'en',
+    ]);
     Membership::factory()->for($viewer)->for($team)->create();
 
     $confirmedOne = User::factory()->create(['name' => 'Freja Hansen']);
@@ -203,13 +210,18 @@ it('shows only first names of confirmed volunteers on each slot when the names s
 
 it('shows no volunteer names on the schedule when the names setting is off', function () {
     $team = Team::factory()->create([
+        'name' => 'Bar Team',
         'timezone' => 'Europe/Copenhagen',
         'settings' => new TeamSettings(showConfirmedVolunteerNames: false),
     ]);
     $season = Season::factory()->for($team)->create();
     $team->update(['current_season_id' => $season->id]);
 
-    $viewer = User::factory()->create(['name' => 'Viewer Person', 'locale' => 'en']);
+    $viewer = User::factory()->create([
+        'name' => 'Viewer Person',
+        'email' => 'viewer@example.com',
+        'locale' => 'en',
+    ]);
     Membership::factory()->for($viewer)->for($team)->create();
 
     $confirmedVolunteer = User::factory()->create(['name' => 'Freja Hansen']);
