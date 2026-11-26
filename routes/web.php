@@ -27,6 +27,7 @@ Route::middleware(['auth', EnsureCurrentTeam::class])->group(function (): void {
     Route::livewire('my-shifts', 'pages::my-shifts.index')->name('my-shifts.index');
     Route::livewire('invitations/create', 'pages::invitations.create')->name('invitations.create');
     Route::livewire('members', 'pages::members.index')->name('members.index');
+    Route::livewire('team/settings', 'pages::team.settings')->name('team.settings');
     Route::post('current-team', CurrentTeamController::class)->name('current-team.update');
 });
 Route::post('logout', LogoutController::class)->middleware('auth')->name('logout');

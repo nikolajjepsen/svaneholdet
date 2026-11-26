@@ -21,4 +21,9 @@ class TeamPolicy
     {
         return $user->isAdminOf($team);
     }
+
+    public function updateSettings(User $user, Team $team): bool
+    {
+        return $user->isAdminOf($team);
+    }
 }

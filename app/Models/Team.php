@@ -10,11 +10,16 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'timezone', 'current_season_id'])]
+/**
+ * @property TeamSettings $settings
+ */
+#[Fillable(['name', 'timezone', 'current_season_id', 'settings'])]
 class Team extends Model
 {
     /** @use HasFactory<TeamFactory> */
     use HasFactory;
+
+    protected $attributes = ['settings' => '{}'];
 
     /** @return HasMany<Season, $this> */
     public function seasons(): HasMany
@@ -44,5 +49,13 @@ class Team extends Model
     public function invitations(): HasMany
     {
         return $this->hasMany(Invitation::class);
+    }
+
+    /** @return array<string, string> */
+    protected function casts(): array
+    {
+        return [
+            'settings' => TeamSettings::class,
+        ];
     }
 }
