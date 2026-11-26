@@ -141,15 +141,24 @@ it('renews the ninety-day session when used and expires it after ninety idle day
     auth()->forgetGuards();
     session()->flush();
     $dashboard = $this->withCookie($cookieName, $sessionCookie->getValue())->get('/dashboard')->assertOk();
-    expect($dashboard->getCookie($cookieName)->getExpiresTime())->toBe(now()->addDays(90)->timestamp);
+    $renewedCookie = $dashboard->getCookie($cookieName);
+    expect($renewedCookie->getExpiresTime())->toBe(now()->addDays(90)->timestamp);
 
     $this->travel(2)->days();
     auth()->forgetGuards();
     session()->flush();
-    $this->get('/dashboard')->assertOk();
+    $afterRenewal = $this->withCookie($cookieName, $renewedCookie->getValue())->get('/dashboard')->assertOk();
 
     $this->travel(91)->days();
     auth()->forgetGuards();
     session()->flush();
-    $this->get('/dashboard')->assertRedirect('/login');
+    $this->withCookie($cookieName, $afterRenewal->getCookie($cookieName)->getValue())->get('/dashboard')->assertRedirect('/login');
+});
+
+it('redirects an authenticated user away from the login page to the dashboard', function () {
+    $user = User::factory()->has(Membership::factory())->create();
+
+    $this->actingAs($user)
+        ->get('/login')
+        ->assertRedirect('/dashboard');
 });

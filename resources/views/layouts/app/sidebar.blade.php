@@ -1,8 +1,10 @@
 @php
     $user = auth()->user();
     $teamResolver = app(\App\Auth\CurrentTeam::class);
-    $currentTeam = request()->attributes->get(\App\Models\Team::class) ?? ($user !== null ? $teamResolver->resolve($user) : null);
-    $activeTeams = $user !== null ? $teamResolver->activeTeams($user) : collect();
+    $activeTeams = request()->attributes->get(\App\Auth\CurrentTeam::ACTIVE_TEAMS_ATTRIBUTE)
+        ?? ($user !== null ? $teamResolver->activeTeams($user) : collect());
+    $currentTeam = request()->attributes->get(\App\Models\Team::class)
+        ?? ($user !== null ? $teamResolver->resolve($user, $activeTeams) : null);
 @endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">

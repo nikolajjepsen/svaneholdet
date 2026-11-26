@@ -12,6 +12,8 @@ class CurrentTeam
 {
     public const string SESSION_KEY = 'current_team_id';
 
+    public const string ACTIVE_TEAMS_ATTRIBUTE = 'active_teams';
+
     /** @return Collection<int, Team> */
     public function activeTeams(User $user): Collection
     {
@@ -25,9 +27,10 @@ class CurrentTeam
             ->get();
     }
 
-    public function resolve(User $user): ?Team
+    /** @param ?Collection<int, Team> $teams */
+    public function resolve(User $user, ?Collection $teams = null): ?Team
     {
-        $teams = $this->activeTeams($user);
+        $teams ??= $this->activeTeams($user);
 
         if ($teams->isEmpty()) {
             return null;

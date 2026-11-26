@@ -36,7 +36,7 @@ new class extends Component
 
     public function hydrate(CurrentTeam $currentTeam): void
     {
-        $team = $currentTeam->resolve($this->user());
+        $team = request()->attributes->get(Team::class) ?? $currentTeam->resolve($this->user());
         abort_unless($team?->id === $this->teamId, 403);
         Gate::authorize('invite', $team);
 

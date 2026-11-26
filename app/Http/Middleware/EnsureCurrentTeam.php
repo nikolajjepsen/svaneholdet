@@ -20,7 +20,8 @@ class EnsureCurrentTeam
         $user = $request->user();
         abort_if($user === null, 403);
 
-        $team = $this->currentTeam->resolve($user);
+        $activeTeams = $this->currentTeam->activeTeams($user);
+        $team = $this->currentTeam->resolve($user, $activeTeams);
 
         if ($team === null) {
             Auth::guard('web')->logout();
@@ -33,6 +34,7 @@ class EnsureCurrentTeam
         Gate::authorize('view', $team);
 
         $request->attributes->set(Team::class, $team);
+        $request->attributes->set(CurrentTeam::ACTIVE_TEAMS_ATTRIBUTE, $activeTeams);
 
         return $next($request);
     }

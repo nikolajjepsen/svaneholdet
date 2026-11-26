@@ -3,6 +3,7 @@
 use App\Auth\CurrentTeam;
 use App\Auth\Invitations;
 use App\Auth\Memberships;
+use App\Enums\InvitationStatus;
 use App\Enums\MembershipRole;
 use App\Models\Invitation;
 use App\Models\Membership;
@@ -37,7 +38,7 @@ new class extends Component
 
     public function hydrate(CurrentTeam $currentTeam): void
     {
-        $team = $currentTeam->resolve($this->user());
+        $team = request()->attributes->get(Team::class) ?? $currentTeam->resolve($this->user());
         abort_unless($team?->id === $this->teamId, 403);
         Gate::authorize('manageMembers', $team);
 
@@ -145,7 +146,7 @@ new class extends Component
             ->get();
 
         $invitations = $this->team->invitations()
-            ->pending()
+            ->unresolved()
             ->oldest('id')
             ->get();
 
@@ -265,7 +266,11 @@ new class extends Component
                     </flux:table.cell>
 
                     <flux:table.cell>
-                        <flux:badge color="zinc" size="sm">{{ __('Pending') }}</flux:badge>
+                        @if ($invitation->status() === InvitationStatus::Expired)
+                            <flux:badge color="red" size="sm">{{ __('Expired') }}</flux:badge>
+                        @else
+                            <flux:badge color="zinc" size="sm">{{ __('Pending') }}</flux:badge>
+                        @endif
                     </flux:table.cell>
 
                     <flux:table.cell align="end">

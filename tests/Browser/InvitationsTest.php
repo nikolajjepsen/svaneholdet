@@ -37,6 +37,11 @@ it('lets an admin send an invitation and the invitee accept it from their email'
         ->assertSee('Karla Volunteer')
         ->assertDontSee('Invitér en frivillig')
         ->navigate(parse_url($url, PHP_URL_PATH))
+        ->assertPathIs('/dashboard')
+        ->click('@sidebar-menu-button')
+        ->click('button[data-test="logout-button"]:visible')
+        ->assertPathIs('/')
+        ->navigate(parse_url($url, PHP_URL_PATH))
         ->assertPathIs('/login')
         ->assertNoSmoke();
 });

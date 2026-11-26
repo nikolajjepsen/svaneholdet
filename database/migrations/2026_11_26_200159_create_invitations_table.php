@@ -16,9 +16,9 @@ return new class extends Migration
             $table->string('name');
             $table->string('email');
             $table->char('token_hash', 64)->unique();
-            $table->timestamp('expires_at');
-            $table->timestamp('redeemed_at')->nullable();
-            $table->timestamp('withdrawn_at')->nullable();
+            $table->timestampTz('expires_at');
+            $table->timestampTz('redeemed_at')->nullable();
+            $table->timestampTz('withdrawn_at')->nullable();
             $table->timestamps();
         });
 

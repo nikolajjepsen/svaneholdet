@@ -75,8 +75,8 @@ class Invitations
 
             Gate::forUser($actor)->authorize('resend', $locked);
 
-            if ($locked->status() !== InvitationStatus::Pending) {
-                throw ValidationException::withMessages(['invitation' => __('This invitation is no longer pending.')]);
+            if (! in_array($locked->status(), [InvitationStatus::Pending, InvitationStatus::Expired], true)) {
+                throw ValidationException::withMessages(['invitation' => __('This invitation can no longer be changed.')]);
             }
 
             $locked->update([
@@ -105,8 +105,8 @@ class Invitations
 
             Gate::forUser($actor)->authorize('withdraw', $locked);
 
-            if ($locked->status() !== InvitationStatus::Pending) {
-                throw ValidationException::withMessages(['invitation' => __('This invitation is no longer pending.')]);
+            if (! in_array($locked->status(), [InvitationStatus::Pending, InvitationStatus::Expired], true)) {
+                throw ValidationException::withMessages(['invitation' => __('This invitation can no longer be changed.')]);
             }
 
             $locked->update(['withdrawn_at' => now()]);

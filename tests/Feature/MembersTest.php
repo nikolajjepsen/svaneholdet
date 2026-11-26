@@ -22,7 +22,7 @@ beforeEach(function () {
     $this->otherMembership = Membership::factory()->for($this->admin)->for($this->otherTeam)->create();
 });
 
-it('shows active members with their roles and pending invitations for the current team only', function () {
+it('shows active members with their roles and unresolved invitations for the current team only', function () {
     $volunteer = User::factory()->create(['name' => 'Bob Volunteer']);
     Membership::factory()->for($volunteer)->for($this->team)->create();
 
@@ -72,9 +72,11 @@ it('shows active members with their roles and pending invitations for the curren
         ->assertSee('Eva Pending')
         ->assertSee('eva@example.com')
         ->assertSee('Pending')
+        ->assertSee('Frank Expired')
+        ->assertSee('frank@example.com')
+        ->assertSee('Expired')
         ->assertDontSee('Charlie Removed')
         ->assertDontSee('Dana OtherTeam')
-        ->assertDontSee('Frank Expired')
         ->assertDontSee('Grace Withdrawn')
         ->assertDontSee('Henry Redeemed')
         ->assertDontSee('Ivy OtherInvite');
@@ -357,6 +359,107 @@ it('refuses removing a membership belonging to another team', function () {
     expect($otherTeamMembership->fresh()->status)->toBe(MembershipStatus::Active);
 });
 
+it('resends an expired invitation with a fresh 14-day link while keeping the old link unusable', function () {
+    $this->freezeSecond();
+    $this->actingAs($this->admin);
+
+    Livewire::test('pages::invitations.create')
+        ->set('name', 'Frank Expired')
+        ->set('email', 'frank@example.com')
+        ->call('invite')
+        ->assertHasNoErrors();
+
+    $firstMail = Mail::sent(InvitationMail::class)->last();
+    $oldPath = parse_url($firstMail->url, PHP_URL_PATH);
+    $invitation = Invitation::query()->where('email', 'frank@example.com')->sole();
+
+    $this->travel(15)->days();
+
+    Livewire::test('pages::members.index')
+        ->assertSee('Frank Expired')
+        ->assertSee('Expired')
+        ->call('resend', $invitation->id)
+        ->assertHasNoErrors()
+        ->assertSee('Pending');
+
+    Mail::assertSentCount(2);
+    $secondMail = Mail::sent(InvitationMail::class)->last();
+    $newPath = parse_url($secondMail->url, PHP_URL_PATH);
+
+    expect($newPath)->not->toBe($oldPath)
+        ->and($invitation->fresh()->expires_at->toDateTimeString())->toBe(now()->addDays(14)->toDateTimeString());
+
+    $this->post('/logout');
+    Auth::forgetGuards();
+
+    $this->get($oldPath)->assertOk()->assertSee('This invitation link is unavailable.');
+    $this->post($oldPath)->assertOk()->assertSee('This invitation link is unavailable.');
+    $this->assertGuest();
+
+    $this->get($newPath)->assertOk()->assertSee('Accept');
+    $this->post($newPath)->assertRedirect('/dashboard');
+    $this->assertAuthenticated();
+});
+
+it('withdraws an expired invitation so it leaves the list and shows the withdrawn page', function () {
+    $this->actingAs($this->admin);
+
+    Livewire::test('pages::invitations.create')
+        ->set('name', 'Frank Expired')
+        ->set('email', 'frank@example.com')
+        ->call('invite')
+        ->assertHasNoErrors();
+
+    $path = parse_url(Mail::sent(InvitationMail::class)->last()->url, PHP_URL_PATH);
+    $invitation = Invitation::query()->where('email', 'frank@example.com')->sole();
+
+    $this->travel(15)->days();
+
+    Livewire::test('pages::members.index')
+        ->assertSee('Frank Expired')
+        ->assertSee('Expired')
+        ->call('withdraw', $invitation->id)
+        ->assertHasNoErrors()
+        ->assertDontSee('Frank Expired');
+
+    expect($invitation->fresh()->withdrawn_at)->not->toBeNull();
+
+    $this->post('/logout');
+    Auth::forgetGuards();
+
+    $this->get($path)->assertOk()->assertSee('This invitation was withdrawn.');
+    $this->post($path)->assertOk()->assertSee('This invitation was withdrawn.');
+    $this->assertGuest();
+});
+
+it('refuses resending or withdrawing an already redeemed or withdrawn invitation', function () {
+    $redeemed = Invitation::factory()->for($this->team)->create([
+        'invited_by' => $this->admin->id,
+        'email' => 'redeemed@example.com',
+        'redeemed_at' => now()->subMinute(),
+    ]);
+    $withdrawn = Invitation::factory()->for($this->team)->create([
+        'invited_by' => $this->admin->id,
+        'email' => 'withdrawn@example.com',
+        'withdrawn_at' => now()->subMinute(),
+    ]);
+
+    $this->actingAs($this->admin);
+
+    Livewire::test('pages::members.index')
+        ->call('resend', $redeemed->id)
+        ->assertHasErrors('invitation')
+        ->assertSee('This invitation can no longer be changed.')
+        ->call('withdraw', $redeemed->id)
+        ->assertHasErrors('invitation')
+        ->call('resend', $withdrawn->id)
+        ->assertHasErrors('invitation')
+        ->call('withdraw', $withdrawn->id)
+        ->assertHasErrors('invitation');
+
+    Mail::assertNothingSent();
+});
+
 it('renders the member list in Danish for Danish users', function () {
     $this->admin->update(['locale' => 'da']);
     $volunteer = User::factory()->create(['name' => 'Bob Volunteer']);
@@ -366,6 +469,12 @@ it('renders the member list in Danish for Danish users', function () {
         'name' => 'Eva Pending',
         'email' => 'eva@example.com',
     ]);
+    Invitation::factory()->for($this->team)->create([
+        'invited_by' => $this->admin->id,
+        'name' => 'Frank Expired',
+        'email' => 'frank@example.com',
+        'expires_at' => now()->subMinute(),
+    ]);
 
     $this->actingAs($this->admin)
         ->get('/members')
@@ -374,6 +483,7 @@ it('renders the member list in Danish for Danish users', function () {
         ->assertSee('Administrator')
         ->assertSee('Frivillig')
         ->assertSee('Afventer')
+        ->assertSee('Udløbet')
         ->assertSee('Gør til administrator')
         ->assertSee('Fjern')
         ->assertSee('Send igen')
