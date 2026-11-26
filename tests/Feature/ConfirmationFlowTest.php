@@ -406,3 +406,67 @@ it('leaves existing pending shifts pending when confirmation is turned off', fun
     expect($secondShift->status)->toBe(ShiftStatus::Confirmed);
     expect($secondShift->confirmed_at)->not->toBeNull();
 });
+
+it('lets a volunteer withdraw a pending shift at any time and request again without sending email', function () {
+    Mail::fake();
+
+    [$teamA, $seasonA] = createConfirmationTeam('Team A', requiresConfirmation: true);
+    [$teamB] = createConfirmationTeam('Team B', requiresConfirmation: true);
+
+    // Slot starts in 2 hours — well inside the 48-hour cancellation deadline
+    $slot = Slot::factory()->for($seasonA)->create([
+        'starts_at' => now()->addHours(2),
+        'ends_at' => now()->addHours(6),
+        'capacity' => 2,
+    ]);
+
+    $volunteer = User::factory()->create(['locale' => 'en']);
+    $membership = Membership::factory()->for($volunteer)->for($teamA)->create();
+
+    $otherTeamVolunteer = User::factory()->create(['locale' => 'en']);
+    Membership::factory()->for($otherTeamVolunteer)->for($teamB)->create();
+
+    // Volunteer requests shift -> pending
+    $this->actingAs($volunteer);
+    Livewire::test('pages::schedule.index')
+        ->call('signUp', $slot->id)
+        ->assertHasNoErrors();
+
+    $shift = Shift::query()->where('slot_id', $slot->id)->where('membership_id', $membership->id)->sole();
+    expect($shift->status)->toBe(ShiftStatus::Pending);
+
+    // Another team's volunteer cannot withdraw it
+    $this->actingAs($otherTeamVolunteer);
+    Livewire::test('pages::my-shifts.index')
+        ->call('withdrawShift', $shift->id)
+        ->assertForbidden();
+
+    // Volunteer withdraws their own pending shift from My shifts even inside the deadline
+    $this->actingAs($volunteer);
+    Livewire::test('pages::my-shifts.index')
+        ->assertSee('Withdraw')
+        ->call('withdrawShift', $shift->id)
+        ->assertHasNoErrors();
+
+    expect($shift->fresh()->status)->toBe(ShiftStatus::Cancelled);
+    Mail::assertNothingSent();
+
+    // Volunteer can request the slot again and withdraw from Schedule too
+    Livewire::test('pages::schedule.index')
+        ->call('signUp', $slot->id)
+        ->assertHasNoErrors()
+        ->assertSee('Withdraw');
+
+    $secondShift = Shift::query()
+        ->where('slot_id', $slot->id)
+        ->where('membership_id', $membership->id)
+        ->where('status', ShiftStatus::Pending)
+        ->sole();
+
+    Livewire::test('pages::schedule.index')
+        ->call('withdrawShift', $secondShift->id)
+        ->assertHasNoErrors();
+
+    expect($secondShift->fresh()->status)->toBe(ShiftStatus::Cancelled);
+    Mail::assertNothingSent();
+});

@@ -45,7 +45,8 @@ it('cancels a confirmed shift before the deadline, frees the place, sends no ema
     $membership = Membership::factory()->for($volunteer)->for($team)->create();
 
     $shifts = app(Shifts::class);
-    $shift = $shifts->signUp($slot, $volunteer);
+    $shift = $shifts->signUp($slot, $volunteer)->shift;
+    expect($shift)->not->toBeNull();
 
     $cancelled = $shifts->cancel($shift, $volunteer);
 
@@ -53,7 +54,8 @@ it('cancels a confirmed shift before the deadline, frees the place, sends no ema
     expect(Shift::query()->where('slot_id', $slot->id)->where('status', ShiftStatus::Confirmed)->count())->toBe(0);
     Mail::assertNothingSent();
 
-    $newShift = $shifts->signUp($slot, $volunteer);
+    $newShift = $shifts->signUp($slot, $volunteer)->shift;
+    expect($newShift)->not->toBeNull();
 
     expect($newShift->id)->not->toBe($shift->id);
     expect($newShift->status)->toBe(ShiftStatus::Confirmed);
@@ -114,8 +116,8 @@ it('withdraws a pending shift at any time even after the cancellation deadline a
     Mail::assertNothingSent();
 
     // Can sign up again after withdrawing
-    $newShift = $shifts->signUp($slot, $volunteer);
-    expect($newShift->status)->toBe(ShiftStatus::Confirmed);
+    $newShift = $shifts->signUp($slot, $volunteer)->shift;
+    expect($newShift?->status)->toBe(ShiftStatus::Confirmed);
 });
 
 it('refuses cancelling a non-confirmed shift and withdrawing a non-pending shift', function () {
