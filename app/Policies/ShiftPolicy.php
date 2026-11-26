@@ -39,4 +39,22 @@ class ShiftPolicy
     {
         return $user->isAdminOf($shift->membership->team_id);
     }
+
+    public function cancel(User $user, Shift $shift): bool
+    {
+        if ($shift->membership->user_id !== $user->id) {
+            return false;
+        }
+
+        return $user->activeMemberships()->where('team_id', $shift->membership->team_id)->exists();
+    }
+
+    public function withdraw(User $user, Shift $shift): bool
+    {
+        if ($shift->membership->user_id !== $user->id) {
+            return false;
+        }
+
+        return $user->activeMemberships()->where('team_id', $shift->membership->team_id)->exists();
+    }
 }

@@ -51,6 +51,16 @@ class Slot extends Model
         return round($this->starts_at->diffInMinutes($this->ends_at) / 60, 2);
     }
 
+    public function cancellationDeadline(Team $team): CarbonImmutable
+    {
+        return $this->starts_at->subHours($team->settings->cancellationDeadlineHours);
+    }
+
+    public function isBeforeCancellationDeadline(Team $team, ?CarbonImmutable $at = null): bool
+    {
+        return ($at ?? now())->lessThanOrEqualTo($this->cancellationDeadline($team));
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

@@ -5,6 +5,7 @@ use App\Enums\ShiftStatus;
 use App\Models\Shift;
 use App\Models\Team;
 use App\Models\User;
+use App\Scheduling\Shifts;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -15,6 +16,9 @@ new class extends Component
 {
     #[Locked]
     public int $teamId;
+
+    #[Locked]
+    public ?string $statusMessage = null;
 
     protected Team $team;
 
@@ -35,6 +39,32 @@ new class extends Component
         Gate::authorize('viewAny', [Shift::class, $team]);
 
         $this->team = $team;
+    }
+
+    public function cancelShift(int $shiftId, Shifts $shifts): void
+    {
+        $this->statusMessage = null;
+
+        $shift = Shift::query()->with(['membership', 'slot.season'])->findOrFail($shiftId);
+        abort_unless($shift->membership->team_id === $this->teamId, 403);
+        Gate::authorize('cancel', $shift);
+
+        $shifts->cancel($shift, $this->user());
+
+        $this->statusMessage = __('Your shift has been cancelled.');
+    }
+
+    public function withdrawShift(int $shiftId, Shifts $shifts): void
+    {
+        $this->statusMessage = null;
+
+        $shift = Shift::query()->with(['membership', 'slot.season'])->findOrFail($shiftId);
+        abort_unless($shift->membership->team_id === $this->teamId, 403);
+        Gate::authorize('withdraw', $shift);
+
+        $shifts->withdraw($shift, $this->user());
+
+        $this->statusMessage = __('Your shift request has been withdrawn.');
     }
 
     private function user(): User
@@ -86,6 +116,18 @@ new class extends Component
         <flux:text class="mt-1">{{ $team->name }}</flux:text>
     </div>
 
+    @if ($statusMessage !== null)
+        <flux:callout icon="check-circle" color="green" role="status">
+            <flux:callout.text>{{ $statusMessage }}</flux:callout.text>
+        </flux:callout>
+    @endif
+
+    @if ($errors->has('shift'))
+        <flux:callout icon="exclamation-circle" color="red" role="alert">
+            <flux:callout.text>{{ $errors->first('shift') }}</flux:callout.text>
+        </flux:callout>
+    @endif
+
     <div class="space-y-3">
         <flux:heading size="lg" level="2">{{ __('Upcoming shifts') }}</flux:heading>
 
@@ -119,9 +161,37 @@ new class extends Component
                                 </flux:text>
                             </div>
 
-                            <flux:badge size="sm" :color="$badgeColor">
-                                {{ $shift->status->label() }}
-                            </flux:badge>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <flux:badge size="sm" :color="$badgeColor">
+                                    {{ $shift->status->label() }}
+                                </flux:badge>
+
+                                @if ($shift->status === ShiftStatus::Confirmed)
+                                    @if ($shift->slot->isBeforeCancellationDeadline($team))
+                                        <flux:button
+                                            variant="ghost"
+                                            size="sm"
+                                            wire:click="cancelShift({{ $shift->id }})"
+                                            data-test="cancel-shift-{{ $shift->id }}"
+                                        >
+                                            {{ __('Cancel shift') }}
+                                        </flux:button>
+                                    @else
+                                        <flux:text class="text-xs" data-test="contact-admin-to-cancel-shift-{{ $shift->id }}">
+                                            {{ __('Contact an admin to cancel.') }}
+                                        </flux:text>
+                                    @endif
+                                @elseif ($shift->status === ShiftStatus::Pending)
+                                    <flux:button
+                                        variant="ghost"
+                                        size="sm"
+                                        wire:click="withdrawShift({{ $shift->id }})"
+                                        data-test="withdraw-shift-{{ $shift->id }}"
+                                    >
+                                        {{ __('Withdraw') }}
+                                    </flux:button>
+                                @endif
+                            </div>
                         </div>
                     </flux:card>
                 @endforeach
@@ -162,9 +232,22 @@ new class extends Component
                                 </flux:text>
                             </div>
 
-                            <flux:badge size="sm" :color="$badgeColor">
-                                {{ $shift->status->label() }}
-                            </flux:badge>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <flux:badge size="sm" :color="$badgeColor">
+                                    {{ $shift->status->label() }}
+                                </flux:badge>
+
+                                @if ($shift->status === ShiftStatus::Pending)
+                                    <flux:button
+                                        variant="ghost"
+                                        size="sm"
+                                        wire:click="withdrawShift({{ $shift->id }})"
+                                        data-test="withdraw-shift-{{ $shift->id }}"
+                                    >
+                                        {{ __('Withdraw') }}
+                                    </flux:button>
+                                @endif
+                            </div>
                         </div>
                     </flux:card>
                 @endforeach

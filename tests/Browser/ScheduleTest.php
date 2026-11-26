@@ -2,6 +2,7 @@
 
 use App\Models\Membership;
 use App\Models\Season;
+use App\Models\Shift;
 use App\Models\Slot;
 use App\Models\Team;
 use App\Models\User;
@@ -51,5 +52,40 @@ it('lets an admin create a slot and a volunteer sign up at phone width', functio
         ->assertSee('08:00–16:00')
         ->assertSee('8 h')
         ->assertSee('Confirmed')
+        ->assertNoSmoke();
+});
+
+it('lets a volunteer cancel a shift at phone width', function () {
+    $team = Team::factory()->create(['name' => 'Bar Team', 'timezone' => 'Europe/Copenhagen']);
+    $season = Season::factory()->for($team)->create(['name' => Season::DEFAULT_NAME]);
+    $team->update(['current_season_id' => $season->id]);
+
+    $volunteer = User::factory()->create(['name' => 'Bob Volunteer', 'locale' => 'en']);
+    $membership = Membership::factory()->for($volunteer)->for($team)->create();
+
+    $startsAt = now()->addDays(5)->setTimezone('Europe/Copenhagen')->setTime(8, 0)->utc();
+    $endsAt = $startsAt->addHours(8);
+
+    $slot = Slot::factory()->for($season)->create([
+        'starts_at' => $startsAt,
+        'ends_at' => $endsAt,
+        'capacity' => 2,
+    ]);
+
+    $shift = Shift::factory()->for($slot)->for($membership)->confirmed()->create();
+
+    $this->actingAs($volunteer);
+
+    visit('/my-shifts')
+        ->on()->mobile()
+        ->assertSee('08:00–16:00')
+        ->assertSee('Confirmed')
+        ->click("@cancel-shift-{$shift->id}")
+        ->assertSee('Your shift has been cancelled.')
+        ->assertSee('Cancelled')
+        ->navigate('/schedule')
+        ->assertPathIs('/schedule')
+        ->assertSee('0 / 2')
+        ->assertSee('Sign up')
         ->assertNoSmoke();
 });
