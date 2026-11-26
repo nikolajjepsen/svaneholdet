@@ -83,6 +83,19 @@ One Laravel app with no API between backend and frontend. Laravel handles routin
 - An admin can open a slot and edit actual arrival and leaving times directly on the participant list. When recording attendance, the slot's planned times are the starting point. If the slot was planned for 12:00–16:00 and a volunteer arrived at 12:30 and left at 15:45, 3 hours and 15 minutes are recorded. Record who changed the times and when.
 - The hours overview shows planned hours and recorded working hours per person. Working hours only count once attendance is recorded, and no-shows are recorded with 0 hours. Overlapping shifts on the same team count their shared hours once. The history shows the slot's date, its planned times and the actually recorded times.
 
+### Hour goals
+
+- Every member has an hour goal for the season, the number of hours they must work.
+- My shifts and the schedule show the member's progress: their hours out of the goal, and how many pending and confirmed shifts they have. "18 / 24 hours, 3 confirmed, 1 pending" is the kind of line we want at the top of both pages.
+- The hours overview shows each person's hours out of their goal, so admins can see who is short.
+
+### Admin shifts
+
+- Admins take shifts, and their hours are tracked like everyone else's: planned hours, recorded attendance and the hours overview.
+- **An admin's shift doesn't count toward a slot's capacity.** A slot for 6 with 6 volunteers and 1 admin is full at "6 / 6", not over. This fits the glossary, where capacity is the number of volunteers a slot asks for.
+- The schedule and the day overview list admins on a slot apart from the volunteers, under their own heading, so volunteers can see who to contact on that shift.
+- **A slot can be for admins only.** Only admins can sign up for it or be assigned to it. On these slots the capacity counts admins, since no volunteers take part.
+
 ## Data model
 
 | Entity | Contents |
@@ -94,7 +107,7 @@ One Laravel app with no API between backend and frontend. Laravel handles routin
 | Membership | User, team, role and access status |
 | Invitation | Team, recipient's name and email, expiry, redemption and withdrawal |
 | Slot series | Season, and the interval it was rolled out with |
-| Slot | Season, optional slot series, planned start and end, and capacity |
+| Slot | Season, optional slot series, planned start and end, capacity, and whether it is for admins only |
 | Shift | Slot, membership, status, when it was confirmed, attendance and actual times |
 
 A shift connects a slot with a membership in the same team. That keeps the history when a member's access is removed. The schedule and the hours overview can be filtered to a period within the season.
@@ -104,11 +117,18 @@ A shift connects a slot with a membership in the same team. That keeps the histo
 1. **Access and invitations.** Set up Laravel with Livewire, Flux, Pest, Larastan and Pint. Build teams, memberships, roles, mail-link login and invitations. Run a real invitation in a test environment from creation to first login. Use two teams in the tests, so role and access are checked across them from the start.
 2. **Seasons, rollout and self-service.** Build seasons, team settings, rollout with preview, slot series, the mobile-friendly schedule and My shifts. Make signing up, pending shifts, confirming, rejecting and cancelling work end to end. Test a rollout over several dates with two intervals, a slot past midnight, several slots on the same day, an admin assigning themselves, going over capacity, overlap on the same team and across teams, cancelling after the deadline, and two simultaneous attempts at the last place.
 3. **Day overview and hour registration.** Build the day count, the participant list with time editing, and history per volunteer. Check that two shifts on the same day count as one person, that overlapping shifts count their shared hours once, and that a shortened shift gives the right number of hours. Also test slots past midnight and no-shows.
-4. **Pilot with Svaneholdet.** Set up email sending, HTTPS, backup and restore. Let a few admins and volunteers run the flow on their phones from invitation to hour registration. Use their feedback to adjust the navigation before the rest of the team is invited.
+4. **Hour goals and admin shifts.** Build hour goals with progress on My shifts, the schedule and the hours overview, admin shifts outside capacity, the separate admin list on slots, and admin-only slots. Test that an admin's shift leaves a full slot at "6 / 6", that a volunteer can't sign up for or be assigned to an admin-only slot, that progress counts pending and confirmed shifts correctly, and that overlapping shifts count their shared hours once toward the goal.
+5. **Pilot with Svaneholdet.** Set up email sending, HTTPS, backup and restore. Let a few admins and volunteers run the flow on their phones from invitation to hour registration. Use their feedback to adjust the navigation before the rest of the team is invited.
 
 ## Open decisions
 
 | Topic | Proposal or question |
 | --- | --- |
-| Hours | Are breaks deducted, especially on 12-hour shifts? Will the hours be used for a minimum requirement or an export? |
+| Hours | Are breaks deducted, especially on 12-hour shifts? Will the hours be used for an export? |
+| Hour goal source | Proposal: a default goal in the team settings for the season, which an admin can override per member. Or is it always set per member? |
+| Hours counted toward the goal | Proposal: planned hours of confirmed shifts count until attendance is recorded, then recorded hours replace them. Do pending shifts count, or only show as a number? |
+| Hour goal for admins | Do admins have an hour goal too, or only volunteers? |
+| Admin role changes | When a volunteer is promoted to admin, or an admin is demoted, do their existing shifts move in or out of capacity? Proposal: count by the member's role now, worked out when it is read. |
+| Admin-only slots for volunteers | Do volunteers see admin-only slots on the schedule, without a signup button, or are they hidden? |
+| Admin signup and confirmation | When the team needs confirmation, does an admin's own signup create a pending shift, or a confirmed one at once? |
 | New teams and copying | Should new teams be created centrally? Should next season's schedule be copied from the last one or rolled out again? |
