@@ -78,6 +78,13 @@
       "skillPath": "skills/engineering/retro/SKILL.md",
       "computedHash": "e260aefb7b75b3548a3ee9883afbf8808e521f2e86feec92399617894f83b7c2"
     },
+    "setup-matt-pocock-skills": {
+      "source": "mattpocock/skills",
+      "commit": "6f7f7831a625f040a8e06a0e7954826b87ce775a",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/setup-matt-pocock-skills/SKILL.md",
+      "computedHash": "9659e7025d4cf1c0a0b40ddff32ed4b8debb87a4b20d7a52ff89c506a638df69"
+    },
     "setup-pre-commit": {
       "source": "mattpocock/skills",
       "commit": "6f7f7831a625f040a8e06a0e7954826b87ce775a",
