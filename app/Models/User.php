@@ -2,9 +2,12 @@
 
 namespace App\Models;
 
+use App\Enums\MembershipStatus;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -24,6 +27,29 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     protected $rememberTokenName = null;
+
+    public function getAuthPassword(): string
+    {
+        return '';
+    }
+
+    /** @return HasMany<Membership, $this> */
+    public function memberships(): HasMany
+    {
+        return $this->hasMany(Membership::class);
+    }
+
+    /** @return HasMany<Membership, $this> */
+    public function activeMemberships(): HasMany
+    {
+        return $this->memberships()->where('status', MembershipStatus::Active);
+    }
+
+    /** @return Attribute<string, string> */
+    protected function email(): Attribute
+    {
+        return Attribute::make(set: fn (string $email): string => Str::lower($email));
+    }
 
     /**
      * Get the user's initials
