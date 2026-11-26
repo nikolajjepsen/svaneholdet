@@ -56,6 +56,12 @@
                                 {{ __('Invite a volunteer') }}
                             </flux:sidebar.item>
                         @endcan
+
+                        @can('updateSettings', $currentTeam)
+                            <flux:sidebar.item icon="cog-6-tooth" :href="route('team.settings')" :current="request()->routeIs('team.settings')" wire:navigate>
+                                {{ __('Team settings') }}
+                            </flux:sidebar.item>
+                        @endcan
                     @endif
                 </flux:sidebar.group>
             </flux:sidebar.nav>

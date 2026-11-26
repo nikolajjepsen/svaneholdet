@@ -119,6 +119,7 @@ new class extends Component
         $user = $this->user();
         $isAdmin = $user->isAdminOf($this->team);
         $timezone = $this->team->timezone;
+        $showConfirmedVolunteerNames = $this->team->settings->showConfirmedVolunteerNames;
 
         $membership = $user->activeMemberships()
             ->whereBelongsTo($this->team)
@@ -133,6 +134,12 @@ new class extends Component
                     ->where('membership_id', $membership?->id)
                     ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value]),
                 ])
+                ->when($showConfirmedVolunteerNames, fn ($query) => $query->with([
+                    'confirmedShifts' => fn ($shiftsQuery) => $shiftsQuery
+                        ->orderBy('confirmed_at')
+                        ->orderBy('id')
+                        ->with('membership.user'),
+                ]))
                 ->orderBy('starts_at')
                 ->orderBy('ends_at')
                 ->orderBy('id')
@@ -161,6 +168,7 @@ new class extends Component
             'season' => $season,
             'isAdmin' => $isAdmin,
             'timezone' => $timezone,
+            'showConfirmedVolunteerNames' => $showConfirmedVolunteerNames,
             'days' => $days,
         ])->title(__('Schedule'));
     }
@@ -258,6 +266,12 @@ new class extends Component
                                             {{ $displayedCount }} / {{ $slot->capacity }}
                                         </flux:badge>
                                     </div>
+
+                                    @if ($showConfirmedVolunteerNames && $slot->confirmedShifts->isNotEmpty())
+                                        <flux:text class="text-sm" data-test="confirmed-names-slot-{{ $slot->id }}">
+                                            {{ $slot->confirmedShifts->map(fn ($shift): string => $shift->membership->user->firstName())->join(', ') }}
+                                        </flux:text>
+                                    @endif
 
                                     <div class="flex items-center justify-end gap-2">
                                         @if ($memberShift !== null)
