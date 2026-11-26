@@ -6,12 +6,7 @@ Svaneholdet, a team of more than 70 volunteers, is the first organisation to use
 
 ## Status
 
-The app is a scaffold so far: the Laravel starter kit with tooling and nothing from the domain yet. Features get built one at a time, in the order of the build sequence in [`PLAN.md`](PLAN.md):
-
-1. Access and invitations: organisations, memberships, roles, mail-link login
-2. Festival years, shift rollout and self-service signup
-3. Day overview and hour registration
-4. Pilot with Svaneholdet
+The app is a scaffold so far: the Laravel starter kit with tooling and nothing from the domain yet. Features get built one at a time, in the order of the build sequence in [`PLAN.md`](PLAN.md).
 
 ## Stack
 
@@ -32,7 +27,7 @@ composer dev                  # server, queue, logs and Vite
 
 ## Docs
 
-- [`PLAN.md`](PLAN.md): the product plan for the first version, in Danish
+- [`PLAN.md`](PLAN.md): the product plan for the first version, with the build sequence and open decisions
 - [`docs/GLOSSARY.md`](docs/GLOSSARY.md): the domain language
 - [`docs/adr/`](docs/adr/): architecture decisions
-- [`AGENTS.md`](AGENTS.md): conventions for coding agents
+- [`AGENTS.md`](AGENTS.md): how coding agents work in this repo, with details in [`docs/agents/`](docs/agents/)

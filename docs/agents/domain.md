@@ -7,7 +7,7 @@ How the engineering skills should consume this repo's domain documentation when 
 - **`docs/GLOSSARY.md`**: the domain language for this repo. It lives in `docs/`, not the repo root.
 - **`docs/adr/`**: read ADRs that touch the area you're about to work in.
 
-If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
+An empty glossary or ADR folder is the normal state early on: carry on with what exists. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) adds terms and ADRs as they get resolved.
 
 ## File structure
 

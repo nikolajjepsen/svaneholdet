@@ -1,100 +1,100 @@
-# Svaneholdets vagtplan
+# Svaneholdet shift planning
 
-Første version skal gøre det muligt for et Smukfest-hold med over 70 frivillige at gå fra invitation til bemandet vagtplan og opgjorte timer. Svaneholdet bliver den første organisation. Datamodellen skal fra starten kunne rumme flere hold med hver deres medlemmer, roller og vagtplaner, men brugerfladen til flere hold venter til efter piloten.
+The first version lets a Smukfest team of more than 70 volunteers go from invitation to a staffed shift plan and recorded hours. Svaneholdet is the first organisation. From the start, the data model must hold several teams, each with its own members, roles and shift plans. The interface for several teams waits until after the pilot.
 
-## Teknologi
+## Technology
 
-Én samlet Laravel-app uden et API mellem backend og frontend. Laravel styrer routing, rettigheder og data, og siderne renderes på serveren.
+One Laravel app with no API between backend and frontend. Laravel handles routing, authorization and data, and pages render on the server.
 
-| Del | Valg |
+| Part | Choice |
 | --- | --- |
-| Framework | Laravel med det officielle Livewire starter kit |
-| Brugerflade | Livewire med komponenter i én fil, så logik og markup ligger samme sted. Alpine til små ting i browseren |
-| Komponenter | Flux til formularer, modaler, tabeller og knapper, så siderne ser færdige ud uden eget designarbejde |
+| Framework | Laravel with the official Livewire starter kit |
+| Interface | Livewire with single-file components, so logic and markup sit together. Alpine for small things in the browser |
+| Components | Flux for forms, modals, tables and buttons, so pages look finished without our own design work |
 | Database | PostgreSQL |
-| Rettigheder | Laravel Policies ved alle læsninger og ændringer, også i Livewire-handlinger |
-| Kvalitet | Pest til tests, Larastan til statisk analyse og Pint til formatering |
-| AI-agenter | Laravel Boost, så agenter kender projektets Laravel-version og konventioner |
+| Authorization | Laravel Policies on every read and write, including Livewire actions |
+| Quality | Pest for tests, Larastan for static analysis and Pint for formatting |
+| AI agents | Laravel Boost, so agents know the project's Laravel version and conventions |
 
 [Laravel Starter Kits](https://laravel.com/framework/docs/13.x/starter-kits) · [Laravel Authorization](https://laravel.com/framework/docs/13.x/authorization) · [PostgreSQL Constraints](https://www.postgresql.org/docs/current/ddl-constraints.html)
 
-## Første version
+## First version
 
-### Organisationer, roller og login
+### Organisations, roles and login
 
-- Et Smukfest-hold er en organisation. En bruger kan være medlem af flere organisationer og have en anden rolle på hvert hold. Datamodellen og alle policies tager højde for det fra start. Siden til at skifte mellem organisationer og opsætning af nye hold bygges først, når der er brug for et hold nummer to.
-- Start med rollerne **frivillig** og **administrator**. Administratoren kan også tage vagter. Begge roller bruger den samme tilmelding, og administratoren kan godkende og tildele pladser som en særskilt handling.
-- **Login sker med et link på mail**, ikke med adgangskode. Brugeren skriver sin e-mail og får et tidsbegrænset engangslink. På telefonen forbliver brugeren logget ind længe, så de frivillige sjældent skal logge ind igen under festivalen.
-- Administratoren opretter en invitation med navn, e-mail og rolle. Linket i invitationsmailen aktiverer kontoen og logger personen ind i samme klik. Har personen allerede en konto, tilføjes medlemskabet til den konto. Administratoren kan gensende invitationen, så det gamle link udløber.
-- Opret Svaneholdet, det første festivalår og den første administrator som led i opsætningen.
+- A Smukfest team is an organisation. A user can be a member of several organisations and have a different role on each team. The data model and every policy account for this from the start. The page for switching organisations and the setup of new teams get built only when a second team needs them.
+- Start with the roles **volunteer** and **admin**. An admin can also take shifts. Both roles use the same signup, and the admin can approve and assign places as a separate action.
+- **Login is by a link sent by email**, not by password. The user enters their email and gets a time-limited, single-use link. On a phone the user stays logged in for a long time, so volunteers rarely have to log in again during the festival.
+- An admin creates an invitation with a name, email and role. The link in the invitation email activates the account and logs the person in with the same click. If the person already has an account, the membership is added to that account. The admin can resend the invitation, which expires the old link.
+- Create Svaneholdet, the first festival year and the first admin as part of setup.
 
-### Festivalår
+### Festival years
 
-- Alle vagter hører til et festivalår, fx "Smukfest 2027". Vagtplan, dagsoversigt og timeoversigt viser det aktuelle år som standard.
-- Det kræver én tabel nu og sparer en migrering af alle vagter næste år. Kopiering af en hel vagtplan til et nyt år bygges senere, men datamodellen er klar til det.
+- Every shift belongs to a festival year, for example "Smukfest 2027". The shift plan, day overview and hours overview show the current year by default.
+- It takes one table now and saves migrating every shift next year. Copying a whole shift plan to a new year gets built later, but the data model is ready for it.
 
-### Vagter og udrulning
+### Shifts and rollout
 
-- En vagt har en titel, start- og sluttidspunkt med dato, pladsantal og en indstilling for, om tilmelding kræver godkendelse. Der kan være flere vagter samme dag, også på samme tid. Start- og slutdato gør det muligt at planlægge en vagt over midnat. Vis tider i `Europe/Copenhagen` og gem entydige tidspunkter i databasen.
-- **Administratoren opretter vagter ved at rulle et mønster ud over en periode.** Det er den normale måde at oprette vagter på. Enkeltvagter kan stadig oprettes og rettes bagefter.
+- A shift has a title, a start and end time with date, a number of places, and a setting for whether signup needs approval. There can be several shifts on the same day, also at the same time. Separate start and end dates make it possible to plan a shift past midnight. Show times in `Europe/Copenhagen` and store unambiguous timestamps in the database.
+- **An admin creates shifts by rolling a pattern out over a period.** That is the normal way to create shifts. Single shifts can still be created and edited afterwards.
 
-Udrulningen spørger om:
+The rollout asks for:
 
-| Felt | Eksempel |
+| Field | Example |
 | --- | --- |
-| Titel | Bar |
-| Periode | 3. til 10. august |
-| Mønster | 2 × 6 timer, 1 × 12 timer eller eget antal og længde |
-| Første vagt starter | 08.00 |
-| Pladser pr. vagt | 6 |
-| Kræver godkendelse | Nej |
+| Title | Bar |
+| Period | 3 to 10 August |
+| Pattern | 2 × 6 hours, 1 × 12 hours, or a custom count and length |
+| First shift starts | 08:00 |
+| Places per shift | 6 |
+| Needs approval | No |
 
-- Med 2 × 6 timer fra 08.00 får hver dag en vagt 08.00–14.00 og en 14.00–20.00. Med 1 × 12 timer fra 20.00 går vagten til 08.00 næste morgen.
-- Før vagterne gemmes, viser en forhåndsvisning alle vagter dag for dag. Administratoren kan fravælge enkelte dage, fx opstilling eller den sidste dag. Hvis en ny vagt har samme titel og overlapper en eksisterende, vises en advarsel.
-- Alle vagter fra én udrulning gemmes i samme transaktion og hører til en **vagtserie**. Hver vagt er bagefter en almindelig vagt, som kan rettes for sig. Fra serien kan administratoren ændre pladsantal eller godkendelseskrav på alle kommende vagter i serien på én gang. En serie kan slettes, så længe ingen af dens vagter har tilmeldinger.
+- With 2 × 6 hours from 08:00, each day gets one shift 08:00–14:00 and one 14:00–20:00. With 1 × 12 hours from 20:00, the shift runs to 08:00 the next morning.
+- Before the shifts are saved, a preview shows every shift day by day. The admin can deselect single days, such as setup or the last day. If a new shift has the same title as an existing one and overlaps it, the preview shows a warning.
+- All shifts from one rollout are saved in the same transaction and belong to a **shift series**. Afterwards each shift is an ordinary shift that can be edited on its own. From the series, the admin can change the number of places or the approval setting on every upcoming shift in the series at once. A series can be deleted as long as none of its shifts have signups.
 
-### Tilmelding og afmelding
+### Signing up and cancelling
 
-- På en vagt med åben tilmelding får medlemmet straks en bekræftet plads, hvis der er ledig kapacitet. På en vagt med godkendelse opretter tilmeldingen en afventende anmodning, som en administrator kan godkende eller afslå.
-- Afventende anmodninger vises særskilt og optager først en plads ved godkendelse. Direkte tilmelding, godkendelse og manuel tildeling kontrollerer pladsantal og gemmer ændringen i samme databasetransaktion med lås på vagten. Så kan to samtidige handlinger ikke begge tage den sidste plads. Et medlem kan kun have én aktiv tilmelding til samme vagt. [Laravel Pessimistic Locking](https://laravel.com/framework/docs/13.x/queries#pessimistic-locking)
-- **Frivillige kan selv melde fra indtil 48 timer før vagten.** Derefter skal de kontakte en administrator, som kan melde dem fra. Fristen er en indstilling på organisationen.
-- **Vagtplanen** viser vagter dag for dag med tid, ledige pladser og tydelige handlinger for tilmelding. **Mine vagter** viser kommende og tidligere vagter med status og timer.
+- On a shift with open signup, the member gets a confirmed place at once if there is free capacity. On a shift that needs approval, signing up creates a pending request, which an admin can approve or reject.
+- Pending requests are shown separately and only take a place when approved. Direct signup, approval and manual assignment check the number of places and save the change in the same database transaction, with a lock on the shift. That way two simultaneous actions can't both take the last place. A member can only have one active signup for the same shift. [Laravel Pessimistic Locking](https://laravel.com/framework/docs/13.x/queries#pessimistic-locking)
+- **Volunteers can cancel on their own until 48 hours before the shift.** After that they have to contact an admin, who can cancel for them. The deadline is a setting on the organisation.
+- **The shift plan** shows shifts day by day with time, free places and clear signup actions. **My shifts** shows upcoming and past shifts with status and hours.
 
-### Bemanding og timer
+### Staffing and hours
 
-- **Dagsoversigten** viser hver vagts bekræftede pladser ud af kapaciteten, afventende anmodninger og samlet antal unikke bekræftede personer på dagen. En person med to vagter tæller én gang i dagstotalen og én gang på hver af sine vagter. Vagter over midnat vises på begge dage, hvor de har bemanding. Siden opdaterer sig selv hvert 10. sekund med `wire:poll`, så administratoren ser nye tilmeldinger uden at genindlæse.
-- Administratoren kan åbne en vagt og rette faktisk møde- og sluttid direkte på deltagerlisten. Vagtens planlagte tider bruges som udgangspunkt ved bekræftelse af fremmødet. Hvis vagten var planlagt til 12.00–16.00, og en frivillig mødte 12.30 og gik 15.45, registreres 3 timer og 15 minutter. Registrér hvem der ændrede tiderne og hvornår.
-- Timeoversigten viser planlagte timer og registrerede arbejdstimer pr. person. Arbejdstimer tæller først, når fremmødet er bekræftet, og udeblivelser registreres med 0 timer. Historikken viser vagtens dato, planlagte tider og de faktisk registrerede tider.
+- **The day overview** shows each shift's confirmed places out of its capacity, pending requests, and the total number of unique confirmed people that day. A person with two shifts counts once in the day total and once on each of their shifts. Shifts past midnight show on both days they are staffed. The page refreshes itself every 10 seconds with `wire:poll`, so the admin sees new signups without reloading.
+- An admin can open a shift and edit actual arrival and leaving times directly on the participant list. When confirming attendance, the shift's planned times are the starting point. If the shift was planned for 12:00–16:00 and a volunteer arrived at 12:30 and left at 15:45, 3 hours and 15 minutes are recorded. Record who changed the times and when.
+- The hours overview shows planned hours and recorded working hours per person. Working hours only count once attendance is confirmed, and no-shows are recorded with 0 hours. The history shows the shift's date, its planned times and the actually recorded times.
 
-## Datamodel
+## Data model
 
-| Entitet | Indhold |
+| Entity | Contents |
 | --- | --- |
-| Bruger | Navn og e-mail |
-| Login-link | Bruger, engangstoken, udløb og brug |
-| Organisation | Holdets navn, tidszone og frist for afmelding |
-| Festivalår | Organisation, navn, første og sidste dag |
-| Medlemskab | Bruger, organisation, rolle og adgangsstatus |
-| Invitation | Organisation, modtagers navn og e-mail, rolle, udløb og indløsning |
-| Vagtserie | Festivalår, titel, periode og mønster, som serien blev rullet ud med |
-| Vagt | Festivalår, eventuel vagtserie, titel, planlagt start og slut, kapacitet og godkendelseskrav |
-| Tilmelding | Vagt, medlemskab, status, fremmøde og faktiske tider |
+| User | Name and email |
+| Login link | User, single-use token, expiry and use |
+| Organisation | Team name, timezone and cancellation deadline |
+| Festival year | Organisation, name, first and last day |
+| Membership | User, organisation, role and access status |
+| Invitation | Organisation, recipient's name and email, role, expiry and redemption |
+| Shift series | Festival year, title, period, and the pattern the series was rolled out with |
+| Shift | Festival year, optional shift series, title, planned start and end, capacity and approval setting |
+| Signup | Shift, membership, status, attendance and actual times |
 
-Tilmeldingen forbinder en vagt med et medlemskab i samme organisation. Det gør det muligt at beholde historikken, når et medlems adgang fjernes. Vagtplanen og timeoversigten kan filtreres på en periode inden for festivalåret.
+A signup connects a shift with a membership in the same organisation. That keeps the history when a member's access is removed. The shift plan and the hours overview can be filtered to a period within the festival year.
 
-## Byggerækkefølge
+## Build sequence
 
-1. **Adgang og invitation.** Opsæt Laravel med Livewire, Flux, Pest, Larastan og Pint. Byg organisationer, medlemskaber, roller, login via mail-link og invitation. Gennemfør en rigtig invitation i et testmiljø fra oprettelse til første login. Prøv med to organisationer i testene, så rolle og adgang kontrolleres på tværs fra starten.
-2. **Festivalår, udrulning og selvbetjening.** Byg festivalåret, udrulningen med forhåndsvisning, vagtserier, den mobilvenlige dagsliste og Mine vagter. Gør direkte tilmelding, afventende anmodninger, godkendelse og afmelding til gennemgående forløb. Afprøv udrulning med 2 × 6 og 1 × 12 timer, en vagt over midnat, flere vagter samme dag, admin på en vagt, afmelding efter fristen og to samtidige forsøg på sidste plads.
-3. **Dagsoversigt og timeregistrering.** Byg dagstælling, deltagerlisten med redigering af tider og historik pr. frivillig. Kontrollér, at to vagter samme dag tæller én person, og at en forkortet vagt giver det rigtige timetal. Afprøv også vagter over midnat og udeblivelser.
-4. **Pilot med Svaneholdet.** Sæt mailafsendelse, HTTPS, backup og gendannelse op. Lad et par administratorer og frivillige gennemføre forløbet på telefon fra invitation til timeregistrering. Brug deres feedback til at justere navigationen, før resten af holdet inviteres.
+1. **Access and invitations.** Set up Laravel with Livewire, Flux, Pest, Larastan and Pint. Build organisations, memberships, roles, mail-link login and invitations. Run a real invitation in a test environment from creation to first login. Use two organisations in the tests, so role and access are checked across them from the start.
+2. **Festival years, rollout and self-service.** Build festival years, rollout with preview, shift series, the mobile-friendly day list and My shifts. Make direct signup, pending requests, approval and cancellation work end to end. Test rollout with 2 × 6 and 1 × 12 hours, a shift past midnight, several shifts on the same day, an admin on a shift, cancelling after the deadline, and two simultaneous attempts at the last place.
+3. **Day overview and hour registration.** Build the day count, the participant list with time editing, and history per volunteer. Check that two shifts on the same day count as one person, and that a shortened shift gives the right number of hours. Also test shifts past midnight and no-shows.
+4. **Pilot with Svaneholdet.** Set up email sending, HTTPS, backup and restore. Let a few admins and volunteers run the flow on their phones from invitation to hour registration. Use their feedback to adjust the navigation before the rest of the team is invited.
 
-## Beslutninger til næste runde
+## Open decisions
 
-| Emne | Forslag eller afklaring |
+| Topic | Proposal or question |
 | --- | --- |
-| Overlap | Skal overlappende vagter for samme person blokeres eller udløse en advarsel, også hvis de er i forskellige organisationer? |
-| Godkendelse | Skal en administrator kunne sætte sig selv direkte på en vagt, der ellers kræver godkendelse? |
-| Ændringer efter tilmelding | Skal den frivillige have besked, hvis tidspunktet ændres, vagten aflyses, eller en anmodning godkendes? Hvordan håndteres en ny kapacitet under det allerede bekræftede antal, også når den ændres for en hel vagtserie? |
-| Timer | Trækkes pauser fra, især på 12-timersvagter? Skal timerne bruges til et minimumskrav eller eksport? |
-| Nye hold og kopiering | Skal flere hold oprettes centralt? Skal næste års vagtplan kopieres fra sidste år eller rulles ud på ny? |
+| Overlap | Should overlapping shifts for the same person be blocked or give a warning, also when they are in different organisations? |
+| Approval | Should an admin be able to put themselves directly on a shift that otherwise needs approval? |
+| Changes after signup | Should the volunteer be notified when the time changes, the shift is cancelled, or a request is approved? How do we handle a new capacity below the number already confirmed, also when it changes for a whole shift series? |
+| Hours | Are breaks deducted, especially on 12-hour shifts? Will the hours be used for a minimum requirement or an export? |
+| New teams and copying | Should new teams be created centrally? Should next year's shift plan be copied from last year or rolled out again? |

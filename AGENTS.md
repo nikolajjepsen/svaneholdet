@@ -1,13 +1,10 @@
 # Svaneholdet
 
-Shift planning for volunteer teams at Smukfest. The product plan is in `PLAN.md`. We build one feature at a time, in the order the plan's build sequence gives.
+Shift planning for volunteer teams at Smukfest. Write code, docs, commits, issues and ADRs in English.
 
-Write code, docs, commits, issues and ADRs in English.
+## Building a feature
 
-## Domain and decisions
-
-- The domain language is in `docs/GLOSSARY.md`, not the repo root. Read it before naming anything in the domain. Skills that mention `GLOSSARY.md` mean this file.
-- ADRs live in `docs/adr/` as `0001-slug.md`. Don't reopen a decision that has an ADR without saying so.
+Features ship one at a time, in the order of the build sequence in `PLAN.md`. Before you build one, read its section in `PLAN.md` and its step in the build sequence. That step lists the scenarios the tests must cover. The open decisions table at the end of `PLAN.md` is unresolved: put those questions to the user, and leave them out of the code until the user answers.
 
 ## Agent skills
 
@@ -17,19 +14,15 @@ GitHub Issues on `nikolajjepsen/svaneholdet`, via `gh`. See `docs/agents/issue-t
 
 ### Domain docs
 
-Single-context: one glossary at `docs/GLOSSARY.md` and ADRs in `docs/adr/`. See `docs/agents/domain.md`.
-
-## Local environment
-
-- Postgres runs in Docker: `docker compose up -d`. Tests use the `svaneholdet_testing` database in the same container, because locking and constraints must be tested against Postgres.
-- Store times in UTC. Display them in the organisation's timezone, which starts as `Europe/Copenhagen`.
+Single-context, with the glossary at `docs/GLOSSARY.md` and ADRs in `docs/adr/`. Every skill that names `GLOSSARY.md` means `docs/GLOSSARY.md`. See `docs/agents/domain.md`.
 
 ## Verifying your work
 
-- `composer test` runs Pint, Larastan and every Pest suite, including the browser suite. It must pass before a commit.
-- Browser tests live in `tests/Browser` and use Pest's browser plugin with Playwright. Write one for every user flow a feature adds, and end it with `assertNoSmoke()` to catch JavaScript errors and console logs. Run `npm run build` first if assets changed. Use `->debug()` or `->screenshot()` when a browser test fails and you need to see the page.
-- Eloquent runs in strict mode outside production: lazy loading, unknown attributes and silently discarded attributes throw. Fix the query with eager loading instead of turning strict mode off.
-- Performance data: Telescope runs in the local environment only, at `/telescope`. It records every request, query, job and mail with durations in the `telescope_entries` table. Use the Boost `database-query` tool to read it, for example the slowest queries for a request, or the query count when you suspect an N+1. Use Boost's `browser-logs` and `last-error` tools for runtime errors.
+- Start Postgres with `docker compose up -d` before running anything. Tests run against the `svaneholdet_testing` database in that container, because seat locking and constraints only behave correctly on real Postgres.
+- `composer test` is the gate: it must pass before every commit.
+- Every user flow a feature adds gets a browser test in `tests/Browser`, ending in `assertNoSmoke()`. Run `npm run build` first when assets changed. `->screenshot()` shows you the page when a browser test fails.
+- Eager-load every relation you read. Outside production, Eloquent runs in strict mode and throws on lazy loading and on unknown attributes.
+- When a page is slow, or a query count looks like an N+1, read `docs/agents/performance.md`.
 
 <laravel-boost-guidelines>
 === foundation rules ===
