@@ -2,10 +2,13 @@
 
 namespace App\Scheduling;
 
+use App\Enums\ShiftStatus;
 use App\Models\Season;
+use App\Models\Shift;
 use App\Models\Slot;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
@@ -61,5 +64,47 @@ class Slots
             'ends_at' => $endsAt->utc(),
             'capacity' => $capacity,
         ]);
+    }
+
+    public function updateCapacity(
+        Slot $slot,
+        User $actor,
+        int $capacity,
+        bool $acceptWarnings = false,
+    ): SlotActionResult {
+        return DB::transaction(function () use ($slot, $actor, $capacity, $acceptWarnings): SlotActionResult {
+            $lockedSlot = Slot::query()
+                ->with('season.team')
+                ->lockForUpdate()
+                ->findOrFail($slot->id);
+
+            Gate::forUser($actor)->authorize('update', $lockedSlot);
+
+            if ($capacity < 1) {
+                throw ValidationException::withMessages([
+                    'capacity' => __('Capacity must be at least 1.'),
+                ]);
+            }
+
+            $confirmedCount = Shift::query()
+                ->where('slot_id', $lockedSlot->id)
+                ->where('status', ShiftStatus::Confirmed)
+                ->count();
+
+            if ($capacity < $lockedSlot->capacity && $capacity < $confirmedCount && ! $acceptWarnings) {
+                return new SlotActionResult(warnings: [
+                    __('This slot already has :confirmed confirmed shifts. Lowering capacity to :capacity will put it over capacity.', [
+                        'confirmed' => $confirmedCount,
+                        'capacity' => $capacity,
+                    ]),
+                ]);
+            }
+
+            $lockedSlot->update([
+                'capacity' => $capacity,
+            ]);
+
+            return new SlotActionResult(slot: $lockedSlot);
+        });
     }
 }

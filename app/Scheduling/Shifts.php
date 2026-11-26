@@ -2,7 +2,9 @@
 
 namespace App\Scheduling;
 
+use App\Enums\MembershipStatus;
 use App\Enums\ShiftStatus;
+use App\Mail\ShiftCancelledMail;
 use App\Mail\ShiftConfirmedMail;
 use App\Mail\ShiftRejectedMail;
 use App\Models\Membership;
@@ -76,10 +78,78 @@ class Shifts
         });
     }
 
-    public function confirm(Shift $shift, User $actor): Shift
+    public function assign(
+        Slot $slot,
+        Membership $membership,
+        User $actor,
+        bool $acceptWarnings = false,
+    ): ShiftActionResult {
+        return DB::transaction(function () use ($slot, $membership, $actor, $acceptWarnings): ShiftActionResult {
+            $lockedSlot = Slot::query()
+                ->with('season.team')
+                ->lockForUpdate()
+                ->findOrFail($slot->id);
+
+            Gate::forUser($actor)->authorize('assign', $lockedSlot);
+
+            $targetMembership = Membership::query()
+                ->with('user')
+                ->findOrFail($membership->id);
+
+            if ($targetMembership->team_id !== $lockedSlot->season->team_id) {
+                throw ValidationException::withMessages([
+                    'assignMembershipId' => __('This member does not belong to this team.'),
+                ]);
+            }
+
+            if ($targetMembership->status !== MembershipStatus::Active) {
+                throw ValidationException::withMessages([
+                    'assignMembershipId' => __('This member is no longer active on the team.'),
+                ]);
+            }
+
+            $alreadySignedUp = Shift::query()
+                ->where('slot_id', $lockedSlot->id)
+                ->where('membership_id', $targetMembership->id)
+                ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value])
+                ->exists();
+
+            if ($alreadySignedUp) {
+                throw ValidationException::withMessages([
+                    'assignMembershipId' => __('This member is already signed up for this slot.'),
+                ]);
+            }
+
+            $confirmedCount = Shift::query()
+                ->where('slot_id', $lockedSlot->id)
+                ->where('status', ShiftStatus::Confirmed)
+                ->count();
+
+            if ($confirmedCount >= $lockedSlot->capacity && ! $acceptWarnings) {
+                return new ShiftActionResult(warnings: [
+                    __('This slot is already full (:confirmed / :capacity). Assigning :name will put it over capacity.', [
+                        'confirmed' => $confirmedCount,
+                        'capacity' => $lockedSlot->capacity,
+                        'name' => $targetMembership->user->name,
+                    ]),
+                ]);
+            }
+
+            $shift = Shift::query()->create([
+                'slot_id' => $lockedSlot->id,
+                'membership_id' => $targetMembership->id,
+                'status' => ShiftStatus::Confirmed,
+                'confirmed_at' => now(),
+            ]);
+
+            return new ShiftActionResult(shift: $shift);
+        });
+    }
+
+    public function confirm(Shift $shift, User $actor, bool $acceptWarnings = false): ShiftActionResult
     {
-        /** @var array{shift: Shift, slot: Slot, recipient: User} $result */
-        $result = DB::transaction(function () use ($shift, $actor): array {
+        /** @var array{result: ShiftActionResult, slot?: Slot, recipient?: User} $outcome */
+        $outcome = DB::transaction(function () use ($shift, $actor, $acceptWarnings): array {
             $lockedSlot = Slot::query()
                 ->with('season.team')
                 ->lockForUpdate()
@@ -109,10 +179,16 @@ class Shifts
                 ->where('status', ShiftStatus::Confirmed)
                 ->count();
 
-            if ($confirmedCount >= $lockedSlot->capacity) {
-                throw ValidationException::withMessages([
-                    'shift' => __('This slot is full.'),
-                ]);
+            if ($confirmedCount >= $lockedSlot->capacity && ! $acceptWarnings) {
+                return [
+                    'result' => new ShiftActionResult(warnings: [
+                        __('This slot is already full (:confirmed / :capacity). Confirming :name will put it over capacity.', [
+                            'confirmed' => $confirmedCount,
+                            'capacity' => $lockedSlot->capacity,
+                            'name' => $lockedShift->membership->user->name,
+                        ]),
+                    ]),
+                ];
             }
 
             $lockedShift->update([
@@ -121,19 +197,24 @@ class Shifts
             ]);
 
             return [
-                'shift' => $lockedShift,
+                'result' => new ShiftActionResult(shift: $lockedShift),
                 'slot' => $lockedSlot,
                 'recipient' => $lockedShift->membership->user,
             ];
         });
 
-        if ($result['recipient']->id !== $actor->id) {
-            Mail::to($result['recipient']->email)
-                ->locale($result['recipient']->preferredLocale())
-                ->send(new ShiftConfirmedMail($result['shift'], $result['slot'], $result['slot']->season->team));
+        if (
+            ! $outcome['result']->hasWarnings()
+            && $outcome['result']->shift !== null
+            && isset($outcome['recipient'], $outcome['slot'])
+            && $outcome['recipient']->id !== $actor->id
+        ) {
+            Mail::to($outcome['recipient']->email)
+                ->locale($outcome['recipient']->preferredLocale())
+                ->send(new ShiftConfirmedMail($outcome['result']->shift, $outcome['slot'], $outcome['slot']->season->team));
         }
 
-        return $result['shift'];
+        return $outcome['result'];
     }
 
     public function reject(Shift $shift, User $actor): Shift
@@ -211,6 +292,53 @@ class Shifts
 
             return $lockedShift;
         });
+    }
+
+    public function cancelByAdmin(Shift $shift, User $actor): Shift
+    {
+        /** @var array{shift: Shift, slot: Slot, recipient: User} $result */
+        $result = DB::transaction(function () use ($shift, $actor): array {
+            $lockedSlot = Slot::query()
+                ->with('season.team')
+                ->lockForUpdate()
+                ->findOrFail($shift->slot_id);
+
+            $lockedShift = Shift::query()
+                ->with('membership.user')
+                ->lockForUpdate()
+                ->findOrFail($shift->id);
+
+            if ($lockedShift->membership->team_id !== $lockedSlot->season->team_id) {
+                throw ValidationException::withMessages([
+                    'shift' => __('This shift does not belong to this team.'),
+                ]);
+            }
+
+            Gate::forUser($actor)->authorize('cancelByAdmin', $lockedShift);
+
+            if ($lockedShift->status !== ShiftStatus::Confirmed) {
+                throw ValidationException::withMessages([
+                    'shift' => __('Only confirmed shifts can be cancelled.'),
+                ]);
+            }
+
+            $lockedShift->status = ShiftStatus::Cancelled;
+            $lockedShift->save();
+
+            return [
+                'shift' => $lockedShift,
+                'slot' => $lockedSlot,
+                'recipient' => $lockedShift->membership->user,
+            ];
+        });
+
+        if ($result['recipient']->id !== $actor->id) {
+            Mail::to($result['recipient']->email)
+                ->locale($result['recipient']->preferredLocale())
+                ->send(new ShiftCancelledMail($result['shift'], $result['slot'], $result['slot']->season->team));
+        }
+
+        return $result['shift'];
     }
 
     public function withdraw(Shift $shift, User $actor): Shift

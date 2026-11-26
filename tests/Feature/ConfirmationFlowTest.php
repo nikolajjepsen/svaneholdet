@@ -228,7 +228,7 @@ it('sends no email when an admin confirms their own pending shift', function () 
     Mail::assertNothingSent();
 });
 
-it('refuses confirming a pending shift when the slot is already full', function () {
+it('warns before confirming a pending shift when the slot is already full', function () {
     Mail::fake();
 
     [$team, $season] = createConfirmationTeam('Bar Team', requiresConfirmation: true);
@@ -254,8 +254,9 @@ it('refuses confirming a pending shift when the slot is already full', function 
 
     Livewire::test('pages::schedule.slot', ['slot' => $slot])
         ->call('confirmShift', $pendingShift->id)
-        ->assertHasErrors(['shift'])
-        ->assertSee('This slot is full.');
+        ->assertHasNoErrors()
+        ->assertSet('showOverCapacityModal', true)
+        ->assertSee('over capacity');
 
     expect($pendingShift->fresh()->status)->toBe(ShiftStatus::Pending);
     expect($pendingShift->fresh()->confirmed_at)->toBeNull();

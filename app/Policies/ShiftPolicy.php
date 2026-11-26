@@ -59,6 +59,11 @@ class ShiftPolicy
         return $user->activeMemberships()->where('team_id', $shift->membership->team_id)->exists();
     }
 
+    public function cancelByAdmin(User $user, Shift $shift): bool
+    {
+        return $user->isAdminOf($shift->membership->team_id);
+    }
+
     public function withdraw(User $user, Shift $shift): bool
     {
         if ($shift->membership->user_id !== $user->id) {

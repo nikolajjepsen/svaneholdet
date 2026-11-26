@@ -351,15 +351,20 @@ new class extends Component
                                                 </flux:badge>
                                             @endif
 
-                                            <flux:badge size="sm" :color="$isFull ? 'zinc' : 'blue'">
+                                            <flux:badge size="sm" :color="($isAdmin && $confirmedCount > $slot->capacity) ? 'amber' : ($isFull ? 'zinc' : 'blue')">
                                                 {{ $displayedCount }} / {{ $slot->capacity }}
                                             </flux:badge>
                                         </div>
                                     </div>
 
                                     @if ($showConfirmedVolunteerNames && $slot->confirmedShifts->isNotEmpty())
+                                        @php
+                                            $displayedConfirmedShifts = $isAdmin
+                                                ? $slot->confirmedShifts
+                                                : $slot->confirmedShifts->take($slot->capacity);
+                                        @endphp
                                         <flux:text class="text-sm" data-test="confirmed-names-slot-{{ $slot->id }}">
-                                            {{ $slot->confirmedShifts->map(fn ($shift): string => $shift->membership->user->firstName())->join(', ') }}
+                                            {{ $displayedConfirmedShifts->map(fn ($shift): string => $shift->membership->user->firstName())->join(', ') }}
                                         </flux:text>
                                     @endif
 

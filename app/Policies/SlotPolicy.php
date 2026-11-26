@@ -39,6 +39,11 @@ class SlotPolicy
         return $user->isAdminOf($slot->season->team_id);
     }
 
+    public function assign(User $user, Slot $slot): bool
+    {
+        return $user->isAdminOf($slot->season->team_id);
+    }
+
     public function signUp(User $user, Slot $slot): bool
     {
         return $user->activeMemberships()->where('team_id', $slot->season->team_id)->exists();
