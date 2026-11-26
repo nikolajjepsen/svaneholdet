@@ -24,6 +24,15 @@ new class extends Component
 
     public bool $showCreateSlotModal = false;
 
+    public bool $showSignUpWarningModal = false;
+
+    #[Locked]
+    public ?int $warningSlotId = null;
+
+    /** @var list<string> */
+    #[Locked]
+    public array $signUpWarnings = [];
+
     public string $date = '';
 
     public string $startTime = '08:00';
@@ -91,9 +100,50 @@ new class extends Component
         abort_unless($slot->season_id === $this->team->current_season_id, 403);
         Gate::authorize('signUp', $slot);
 
-        $shifts->signUp($slot, $this->user());
+        $result = $shifts->signUp($slot, $this->user());
 
-        $this->statusMessage = __('You are signed up for this slot.');
+        if ($result->hasWarnings()) {
+            $this->warningSlotId = $slot->id;
+            $this->signUpWarnings = $result->warnings;
+            $this->showSignUpWarningModal = true;
+
+            return;
+        }
+
+        $this->statusMessage = $result->shift?->status === ShiftStatus::Pending
+            ? __('Your shift request has been sent.')
+            : __('You are signed up for this slot.');
+    }
+
+    public function confirmSignUpWithWarnings(Shifts $shifts): void
+    {
+        $this->statusMessage = null;
+
+        if ($this->warningSlotId === null) {
+            $this->dismissSignUpWarning();
+
+            return;
+        }
+
+        $slot = Slot::query()->with('season')->findOrFail($this->warningSlotId);
+        abort_unless($slot->season->team_id === $this->teamId, 403);
+        abort_unless($slot->season_id === $this->team->current_season_id, 403);
+        Gate::authorize('signUp', $slot);
+
+        $result = $shifts->signUp($slot, $this->user(), acceptWarnings: true);
+
+        $this->dismissSignUpWarning();
+
+        $this->statusMessage = $result->shift?->status === ShiftStatus::Pending
+            ? __('Your shift request has been sent.')
+            : __('You are signed up for this slot.');
+    }
+
+    public function dismissSignUpWarning(): void
+    {
+        $this->showSignUpWarningModal = false;
+        $this->warningSlotId = null;
+        $this->signUpWarnings = [];
     }
 
     private function currentSeason(): ?Season
@@ -128,6 +178,9 @@ new class extends Component
         if ($season !== null) {
             $slots = $season->slots()
                 ->withCount(['shifts as confirmed_shifts_count' => fn ($query) => $query->where('status', ShiftStatus::Confirmed)])
+                ->when($isAdmin, fn ($query) => $query->withCount([
+                    'shifts as pending_shifts_count' => fn ($shiftsQuery) => $shiftsQuery->where('status', ShiftStatus::Pending),
+                ]))
                 ->with(['shifts' => fn ($query) => $query
                     ->where('membership_id', $membership?->id)
                     ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value]),
@@ -167,6 +220,7 @@ new class extends Component
             'isAdmin' => $isAdmin,
             'timezone' => $timezone,
             'showConfirmedVolunteerNames' => $showConfirmedVolunteerNames,
+            'shiftsRequireConfirmation' => $this->team->settings->shiftsRequireConfirmation,
             'days' => $days,
         ])->title(__('Schedule'));
     }
@@ -232,6 +286,7 @@ new class extends Component
                                     $endsLocal = $slot->ends_at->setTimezone($timezone);
                                     $isOvernight = ! $startsLocal->isSameDay($endsLocal);
                                     $confirmedCount = (int) $slot->confirmed_shifts_count;
+                                    $pendingCount = $isAdmin ? (int) $slot->pending_shifts_count : 0;
                                     $displayedCount = $isAdmin ? $confirmedCount : min($confirmedCount, $slot->capacity);
                                     $memberShift = $slot->shifts->first();
                                     $isFull = $confirmedCount >= $slot->capacity;
@@ -248,9 +303,17 @@ new class extends Component
                                             @endif
                                         </div>
 
-                                        <flux:badge size="sm" :color="$isFull ? 'zinc' : 'blue'">
-                                            {{ $displayedCount }} / {{ $slot->capacity }}
-                                        </flux:badge>
+                                        <div class="flex items-center gap-2">
+                                            @if ($isAdmin && $pendingCount > 0)
+                                                <flux:badge size="sm" color="amber" data-test="pending-count-slot-{{ $slot->id }}">
+                                                    {{ __(':count pending', ['count' => $pendingCount]) }}
+                                                </flux:badge>
+                                            @endif
+
+                                            <flux:badge size="sm" :color="$isFull ? 'zinc' : 'blue'">
+                                                {{ $displayedCount }} / {{ $slot->capacity }}
+                                            </flux:badge>
+                                        </div>
                                     </div>
 
                                     @if ($showConfirmedVolunteerNames && $slot->confirmedShifts->isNotEmpty())
@@ -260,11 +323,26 @@ new class extends Component
                                     @endif
 
                                     <div class="flex items-center justify-end gap-2">
-                                        @if ($memberShift !== null)
+                                        @if ($isAdmin)
+                                            <flux:button
+                                                variant="ghost"
+                                                size="sm"
+                                                :href="route('schedule.slots.show', $slot)"
+                                                wire:navigate
+                                                data-test="open-slot-{{ $slot->id }}"
+                                            >
+                                                {{ __('Manage') }}
+                                            </flux:button>
+                                        @endif
+                                        @if ($memberShift !== null && $memberShift->status === ShiftStatus::Pending)
+                                            <flux:badge size="sm" color="amber" data-test="pending-slot-{{ $slot->id }}">
+                                                {{ __('Pending') }}
+                                            </flux:badge>
+                                        @elseif ($memberShift !== null)
                                             <flux:badge size="sm" color="green" data-test="signed-up-slot-{{ $slot->id }}">
                                                 {{ __('Signed up') }}
                                             </flux:badge>
-                                        @elseif ($isFull)
+                                        @elseif ($isFull && ! $shiftsRequireConfirmation)
                                             <flux:badge size="sm" color="zinc" data-test="full-slot-{{ $slot->id }}">
                                                 {{ __('Full') }}
                                             </flux:badge>
@@ -275,7 +353,7 @@ new class extends Component
                                                 wire:click="signUp({{ $slot->id }})"
                                                 data-test="sign-up-slot-{{ $slot->id }}"
                                             >
-                                                {{ __('Sign up') }}
+                                                {{ $shiftsRequireConfirmation ? __('Request shift') : __('Sign up') }}
                                             </flux:button>
                                         @endif
                                     </div>
@@ -335,4 +413,30 @@ new class extends Component
             </flux:modal>
         @endcan
     @endif
+
+    <flux:modal wire:model="showSignUpWarningModal" class="w-full max-w-md" data-test="sign-up-warning-modal">
+        <div class="space-y-5">
+            <flux:heading size="lg">{{ __('Slot is full') }}</flux:heading>
+
+            @foreach ($signUpWarnings as $warningIndex => $warning)
+                <flux:callout wire:key="sign-up-warning-{{ $warningIndex }}" icon="exclamation-triangle" color="amber">
+                    <flux:callout.text>{{ $warning }}</flux:callout.text>
+                </flux:callout>
+            @endforeach
+
+            <div class="flex justify-end gap-2">
+                <flux:button type="button" variant="ghost" wire:click="dismissSignUpWarning">
+                    {{ __('Cancel') }}
+                </flux:button>
+                <flux:button
+                    type="button"
+                    variant="primary"
+                    wire:click="confirmSignUpWithWarnings"
+                    data-test="confirm-sign-up-warning"
+                >
+                    {{ __('Send request') }}
+                </flux:button>
+            </div>
+        </div>
+    </flux:modal>
 </section>

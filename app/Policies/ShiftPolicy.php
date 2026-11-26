@@ -39,4 +39,14 @@ class ShiftPolicy
     {
         return $user->isAdminOf($shift->membership->team_id);
     }
+
+    public function confirm(User $user, Shift $shift): bool
+    {
+        return $user->isAdminOf($shift->membership->team_id);
+    }
+
+    public function reject(User $user, Shift $shift): bool
+    {
+        return $user->isAdminOf($shift->membership->team_id);
+    }
 }
