@@ -30,6 +30,10 @@ return [
     | to expire immediately when the browser is closed then you may
     | indicate that via the expire_on_close configuration option.
     |
+    | This value is also the rolling login window. Every request renews the
+    | session, so a member stays logged in until they go this long without
+    | a visit. The default is 90 days.
+    |
     */
 
     'lifetime' => (int) env('SESSION_LIFETIME', 60 * 24 * 90),

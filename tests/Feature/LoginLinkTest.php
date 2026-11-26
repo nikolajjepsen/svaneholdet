@@ -128,7 +128,7 @@ it('sends at most three links per normalized email and ip in ten minutes', funct
 });
 
 it('renews the ninety-day session when used and expires it after ninety idle days', function () {
-    config(['session.driver' => 'database']);
+    config(['session.driver' => 'database', 'session.lifetime' => 60 * 24 * 90]);
     Mail::fake();
     $this->freezeTime();
     $user = User::factory()->has(Membership::factory()->count(2))->create();

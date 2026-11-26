@@ -49,6 +49,9 @@ jobs:
       - name: Setup Application
         run: composer setup
 
+      - name: Check PSR-4 autoloading
+        run: composer dump-autoload --optimize --strict-psr
+
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 

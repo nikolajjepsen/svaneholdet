@@ -6,6 +6,8 @@ Shift planning for volunteer teams at Smukfest. Write code, docs, commits, issue
 
 Features ship one at a time, in the order of the build sequence in `PLAN.md`. Before you build one, read its section in `PLAN.md` and its step in the build sequence. That step lists the scenarios the tests must cover. The open decisions table at the end of `PLAN.md` is unresolved: put those questions to the user, and leave them out of the code until the user answers.
 
+When a ticket changes who can access something, its tests exercise every route behind that access boundary through HTTP, not only the route the ticket names: dashboard and settings alike. The lost-last-membership tests in `tests/Feature/CurrentTeamTest.php` show the pattern.
+
 ## Localization
 
 Wrap every new user-facing UI and mail string in `__()` using English text. Add its Danish translation to `lang/da.json` in the same change.
