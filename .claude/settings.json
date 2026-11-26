@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(composer test)",
+      "Bash(composer lint)",
+      "Bash(composer types:check)",
+      "Bash(./vendor/bin/pest:*)",
+      "Bash(vendor/bin/pest:*)",
+      "Bash(php artisan test:*)",
+      "Bash(php artisan make:*)",
+      "Bash(php artisan migrate)",
+      "Bash(php artisan route:list:*)",
+      "Bash(npm run build)",
+      "Bash(docker compose up -d)",
+      "Bash(docker compose ps)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
+      "mcp__laravel-boost"
+    ]
+  },
+  "enabledMcpjsonServers": ["laravel-boost"],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pint.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
