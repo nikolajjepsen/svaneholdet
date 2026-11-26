@@ -48,7 +48,7 @@ class ProfileUpdateTest extends TestCase
 
     public function test_appearance_page_is_displayed(): void
     {
-        $this->actingAs(User::factory()->create())
+        $this->actingAs(User::factory()->create(['locale' => 'en']))
             ->get(route('appearance.edit'))
             ->assertOk()
             ->assertSee('Update the appearance settings for your account');

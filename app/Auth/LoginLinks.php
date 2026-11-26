@@ -38,7 +38,7 @@ class LoginLinks
         $path = route('login.confirm', ['token' => $token], absolute: false);
         $url = rtrim(config()->string('app.url'), '/').$path;
 
-        defer(fn () => Mail::to($user->email)->send(new LoginLinkMail($url)));
+        defer(fn () => Mail::to($user)->send(new LoginLinkMail($url)));
     }
 
     public function find(string $token): ?LoginLink

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Mail;
 it('emails a fifteen-minute login link to a member even if another membership was removed', function () {
     Mail::fake();
     $this->freezeTime();
-    $user = User::factory()->create(['email' => 'member@example.com']);
+    $user = User::factory()->create(['email' => 'member@example.com', 'locale' => 'en']);
     $teams = Team::factory()->count(2)->create();
     Membership::factory()->for($user)->for($teams[0])->create();
     Membership::factory()->removed()->for($user)->for($teams[1])->create();
@@ -20,6 +20,7 @@ it('emails a fifteen-minute login link to a member even if another membership wa
 
     Mail::assertSent(LoginLinkMail::class, fn (LoginLinkMail $mail): bool => $mail->hasTo($user->email));
     $mail = Mail::sent(LoginLinkMail::class)->sole();
+    $mail->assertHasSubject('Your login link')->assertSeeInHtml('Open login link');
     $token = basename($mail->url);
     $this->assertDatabaseHas('login_links', [
         'user_id' => $user->id,

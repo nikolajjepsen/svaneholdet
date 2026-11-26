@@ -1,10 +1,14 @@
 <?php
 
+use Illuminate\View\View;
 use Livewire\Component;
-use Livewire\Attributes\Title;
 
-new #[Title('Appearance settings')] class extends Component {
-    //
+new class extends Component
+{
+    public function render(): View
+    {
+        return $this->view()->title(__('Appearance settings'));
+    }
 }; ?>
 
 <section class="w-full">

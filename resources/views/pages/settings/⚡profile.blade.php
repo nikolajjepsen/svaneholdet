@@ -2,10 +2,11 @@
 
 use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
-use Livewire\Attributes\Title;
+use Illuminate\View\View;
 use Livewire\Component;
 
-new #[Title('Profile settings')] class extends Component {
+new class extends Component
+{
     public string $name = '';
 
     public function mount(): void
@@ -22,6 +23,11 @@ new #[Title('Profile settings')] class extends Component {
         Auth::user()->update($validated);
 
         Flux::toast(variant: 'success', text: __('Profile updated.'));
+    }
+
+    public function render(): View
+    {
+        return $this->view()->title(__('Profile settings'));
     }
 }; ?>
 
