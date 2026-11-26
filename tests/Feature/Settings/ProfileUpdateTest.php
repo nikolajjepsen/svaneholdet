@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Settings;
 
+use App\Models\Membership;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -13,7 +14,7 @@ class ProfileUpdateTest extends TestCase
 
     public function test_profile_page_displays_the_users_email(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->has(Membership::factory())->create();
 
         $this->actingAs($user)
             ->get(route('profile.edit'))
@@ -24,7 +25,7 @@ class ProfileUpdateTest extends TestCase
 
     public function test_user_can_update_their_name(): void
     {
-        $user = User::factory()->create(['name' => 'Original Name']);
+        $user = User::factory()->has(Membership::factory())->create(['name' => 'Original Name']);
 
         $this->actingAs($user);
 
@@ -38,7 +39,7 @@ class ProfileUpdateTest extends TestCase
 
     public function test_name_is_required_when_updating_the_profile(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->has(Membership::factory())->create());
 
         Livewire::test('pages::settings.profile')
             ->set('name', '')
@@ -48,7 +49,7 @@ class ProfileUpdateTest extends TestCase
 
     public function test_appearance_page_is_displayed(): void
     {
-        $this->actingAs(User::factory()->create(['locale' => 'en']))
+        $this->actingAs(User::factory()->has(Membership::factory())->create(['locale' => 'en']))
             ->get(route('appearance.edit'))
             ->assertOk()
             ->assertSee('Update the appearance settings for your account');

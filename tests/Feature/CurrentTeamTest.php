@@ -144,6 +144,28 @@ it('logs out a user whose last remaining active membership is removed', function
     $this->assertGuest();
 });
 
+it('logs out a user with no active memberships left when visiting settings routes', function (string $routeName) {
+    $user = User::factory()->create(['locale' => 'en']);
+    $team = Team::factory()->create(['name' => 'Solo Team']);
+    $membership = Membership::factory()->for($user)->for($team)->create();
+
+    $this->actingAs($user)
+        ->get(route($routeName))
+        ->assertOk();
+
+    $membership->update(['status' => MembershipStatus::Removed]);
+
+    $this->actingAs($user->refresh())
+        ->get(route($routeName))
+        ->assertRedirect(route('login'));
+
+    $this->assertGuest();
+})->with([
+    'profile settings' => 'profile.edit',
+    'language settings' => 'language.edit',
+    'appearance settings' => 'appearance.edit',
+]);
+
 it('shows the team switcher in sidebar and mobile header only when the user has more than one active team', function () {
     $teamA = Team::factory()->create(['name' => 'Team Alpha']);
     $teamB = Team::factory()->create(['name' => 'Team Beta']);

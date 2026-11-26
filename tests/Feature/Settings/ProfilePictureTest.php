@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Membership;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -7,7 +8,7 @@ use Livewire\Livewire;
 
 it('stores a square profile picture on the public disk', function (string $extension) {
     $disk = Storage::fake('public');
-    $user = User::factory()->create();
+    $user = User::factory()->has(Membership::factory())->create();
     $this->actingAs($user);
 
     Livewire::test('pages::settings.profile')
@@ -25,7 +26,7 @@ it('removes the previous picture after saving a replacement', function () {
     $disk = Storage::fake('public');
     $previousPath = 'profile-pictures/existing.webp';
     $disk->put($previousPath, 'existing picture');
-    $user = User::factory()->create(['profile_picture_path' => $previousPath]);
+    $user = User::factory()->has(Membership::factory())->create(['profile_picture_path' => $previousPath]);
     $this->actingAs($user);
 
     Livewire::test('pages::settings.profile')
@@ -40,7 +41,7 @@ it('removes the previous picture after saving a replacement', function () {
 it('keeps the existing profile and shows an error when a picture is rejected', function (UploadedFile $picture, string $message) {
     $disk = Storage::fake('public');
     $disk->put('profile-pictures/existing.webp', 'existing picture');
-    $user = User::factory()->create([
+    $user = User::factory()->has(Membership::factory())->create([
         'name' => 'Original Name',
         'locale' => 'da',
         'profile_picture_path' => 'profile-pictures/existing.webp',

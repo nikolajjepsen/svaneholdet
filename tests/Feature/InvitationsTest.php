@@ -212,6 +212,32 @@ it('keeps one pending invitation per team and email at the database boundary', f
     ])))->toThrow(UniqueConstraintViolationException::class, 'invitations_one_unresolved_per_recipient');
 });
 
+it('switches an existing member to the newly joined team when accepting an invitation to a second team', function () {
+    $firstTeam = $this->otherMembership->team()->sole();
+    $secondTeam = $this->membership->team()->sole();
+
+    $invitee = User::factory()->create(['locale' => 'en', 'last_chosen_team_id' => $firstTeam->id]);
+    Membership::factory()->for($invitee)->for($firstTeam)->create(['created_at' => now()->subDays(2)]);
+
+    $this->actingAs($this->admin);
+    $mail = sendInvitation($invitee->email, 'Ignored Name');
+
+    $this->post('/logout');
+    Auth::forgetGuards();
+
+    $this->actingAs($invitee)
+        ->withSession(['current_team_id' => $firstTeam->id])
+        ->post(parse_url($mail->url, PHP_URL_PATH))
+        ->assertRedirect('/dashboard')
+        ->assertSessionHas('current_team_id', $secondTeam->id);
+
+    expect($invitee->refresh()->last_chosen_team_id)->toBe($secondTeam->id);
+
+    $this->get('/dashboard')
+        ->assertOk()
+        ->assertSee($secondTeam->name);
+});
+
 it('issues a fresh invitation for the same address after the old invitation expires', function () {
     $this->actingAs($this->admin);
     $expiredPath = parse_url(sendInvitation()->url, PHP_URL_PATH);

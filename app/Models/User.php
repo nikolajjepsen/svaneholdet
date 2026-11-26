@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\MembershipRole;
 use App\Enums\MembershipStatus;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Translation\HasLocalePreference;
@@ -56,6 +57,16 @@ class User extends Authenticatable implements HasLocalePreference
     public function activeMemberships(): HasMany
     {
         return $this->memberships()->where('status', MembershipStatus::Active);
+    }
+
+    public function isAdminOf(Team|int $team): bool
+    {
+        $teamId = $team instanceof Team ? $team->id : $team;
+
+        return $this->activeMemberships()
+            ->where('team_id', $teamId)
+            ->where('role', MembershipRole::Admin)
+            ->exists();
     }
 
     /** @return BelongsTo<Team, $this> */

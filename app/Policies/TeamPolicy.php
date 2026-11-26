@@ -2,7 +2,6 @@
 
 namespace App\Policies;
 
-use App\Enums\MembershipRole;
 use App\Models\Team;
 use App\Models\User;
 
@@ -15,11 +14,11 @@ class TeamPolicy
 
     public function invite(User $user, Team $team): bool
     {
-        return $user->activeMemberships()->whereBelongsTo($team)->where('role', MembershipRole::Admin)->exists();
+        return $user->isAdminOf($team);
     }
 
     public function manageMembers(User $user, Team $team): bool
     {
-        return $user->activeMemberships()->whereBelongsTo($team)->where('role', MembershipRole::Admin)->exists();
+        return $user->isAdminOf($team);
     }
 }

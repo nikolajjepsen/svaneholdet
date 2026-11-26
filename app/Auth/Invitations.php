@@ -19,6 +19,8 @@ use Illuminate\Validation\ValidationException;
 
 class Invitations
 {
+    public function __construct(private CurrentTeam $currentTeam) {}
+
     public function invite(Team $team, string $name, string $email, User $inviter): void
     {
         $email = Str::lower($email);
@@ -59,10 +61,7 @@ class Invitations
             return $recipient?->preferredLocale() ?? 'da';
         });
 
-        $path = route('invitations.confirm', ['token' => $token], absolute: false);
-        $url = rtrim(config()->string('app.url'), '/').$path;
-
-        Mail::to($email)->locale($locale)->send(new InvitationMail($url, $team->name));
+        $this->sendInvitationMail($email, $locale, $token, $team->name);
     }
 
     public function resend(Invitation $invitation, User $actor): void
@@ -95,10 +94,7 @@ class Invitations
             ];
         });
 
-        $path = route('invitations.confirm', ['token' => $token], absolute: false);
-        $url = rtrim(config()->string('app.url'), '/').$path;
-
-        Mail::to($delivery['email'])->locale($delivery['locale'])->send(new InvitationMail($url, $delivery['team_name']));
+        $this->sendInvitationMail($delivery['email'], $delivery['locale'], $token, $delivery['team_name']);
     }
 
     public function withdraw(Invitation $invitation, User $actor): void
@@ -124,7 +120,8 @@ class Invitations
 
     public function redeem(string $token): User|InvitationStatus|null
     {
-        $result = DB::transaction(function () use ($token): User|InvitationStatus|null {
+        /** @var array{user: User, team: Team}|InvitationStatus|null $result */
+        $result = DB::transaction(function () use ($token): array|InvitationStatus|null {
             $invitation = $this->byToken($token)->lockForUpdate()->first();
 
             if ($invitation === null) {
@@ -136,6 +133,8 @@ class Invitations
             if ($status !== InvitationStatus::Pending) {
                 return $status;
             }
+
+            $team = Team::query()->findOrFail($invitation->team_id);
 
             $user = User::query()->firstOrCreate(
                 ['email' => $invitation->email],
@@ -157,14 +156,25 @@ class Invitations
 
             $invitation->update(['redeemed_at' => now()]);
 
-            return $user;
+            return ['user' => $user, 'team' => $team];
         });
 
-        if ($result instanceof User) {
-            Auth::guard('web')->login($result);
+        if (is_array($result)) {
+            Auth::guard('web')->login($result['user']);
+            $this->currentTeam->switchTo($result['user'], $result['team']);
+
+            return $result['user'];
         }
 
         return $result;
+    }
+
+    private function sendInvitationMail(string $email, string $locale, string $token, string $teamName): void
+    {
+        $path = route('invitations.confirm', ['token' => $token], absolute: false);
+        $url = rtrim(config()->string('app.url'), '/').$path;
+
+        Mail::to($email)->locale($locale)->send(new InvitationMail($url, $teamName));
     }
 
     /** @return Builder<Invitation> */
