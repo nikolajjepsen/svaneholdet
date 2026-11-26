@@ -25,6 +25,12 @@
                     </flux:sidebar.item>
 
                     @if ($currentTeam !== null)
+                        @can('manageMembers', $currentTeam)
+                            <flux:sidebar.item icon="users" :href="route('members.index')" :current="request()->routeIs('members.index')" wire:navigate>
+                                {{ __('Members') }}
+                            </flux:sidebar.item>
+                        @endcan
+
                         @can('invite', $currentTeam)
                             <flux:sidebar.item icon="user-plus" :href="route('invitations.create')" :current="request()->routeIs('invitations.create')" wire:navigate>
                                 {{ __('Invite a volunteer') }}

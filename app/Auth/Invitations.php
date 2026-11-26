@@ -65,6 +65,58 @@ class Invitations
         Mail::to($email)->locale($locale)->send(new InvitationMail($url, $team->name));
     }
 
+    public function resend(Invitation $invitation, User $actor): void
+    {
+        $token = bin2hex(random_bytes(32));
+
+        /** @var array{email: string, team_name: string, locale: string} $delivery */
+        $delivery = DB::transaction(function () use ($invitation, $actor, $token): array {
+            $team = Team::query()->lock('for no key update')->findOrFail($invitation->team_id);
+            $locked = Invitation::query()->lockForUpdate()->findOrFail($invitation->id);
+
+            Gate::forUser($actor)->authorize('resend', $locked);
+
+            if ($locked->status() !== InvitationStatus::Pending) {
+                throw ValidationException::withMessages(['invitation' => __('This invitation is no longer pending.')]);
+            }
+
+            $locked->update([
+                'invited_by' => $actor->id,
+                'token_hash' => hash('sha256', $token),
+                'expires_at' => now()->addDays(14),
+            ]);
+
+            $recipient = User::query()->where('email', $locked->email)->first();
+
+            return [
+                'email' => $locked->email,
+                'team_name' => $team->name,
+                'locale' => $recipient?->preferredLocale() ?? 'da',
+            ];
+        });
+
+        $path = route('invitations.confirm', ['token' => $token], absolute: false);
+        $url = rtrim(config()->string('app.url'), '/').$path;
+
+        Mail::to($delivery['email'])->locale($delivery['locale'])->send(new InvitationMail($url, $delivery['team_name']));
+    }
+
+    public function withdraw(Invitation $invitation, User $actor): void
+    {
+        DB::transaction(function () use ($invitation, $actor): void {
+            Team::query()->lock('for no key update')->findOrFail($invitation->team_id);
+            $locked = Invitation::query()->lockForUpdate()->findOrFail($invitation->id);
+
+            Gate::forUser($actor)->authorize('withdraw', $locked);
+
+            if ($locked->status() !== InvitationStatus::Pending) {
+                throw ValidationException::withMessages(['invitation' => __('This invitation is no longer pending.')]);
+            }
+
+            $locked->update(['withdrawn_at' => now()]);
+        });
+    }
+
     public function find(string $token): ?Invitation
     {
         return $this->byToken($token)->with('team')->first();

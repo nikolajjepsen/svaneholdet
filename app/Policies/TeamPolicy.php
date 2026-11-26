@@ -17,4 +17,9 @@ class TeamPolicy
     {
         return $user->activeMemberships()->whereBelongsTo($team)->where('role', MembershipRole::Admin)->exists();
     }
+
+    public function manageMembers(User $user, Team $team): bool
+    {
+        return $user->activeMemberships()->whereBelongsTo($team)->where('role', MembershipRole::Admin)->exists();
+    }
 }
