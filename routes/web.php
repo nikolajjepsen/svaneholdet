@@ -23,6 +23,7 @@ Route::middleware(['auth', EnsureCurrentTeam::class])->group(function (): void {
     ]))->name('dashboard');
 
     Route::livewire('invitations/create', 'pages::invitations.create')->name('invitations.create');
+    Route::livewire('members', 'pages::members.index')->name('members.index');
 });
 Route::post('logout', LogoutController::class)->middleware('auth')->name('logout');
 
