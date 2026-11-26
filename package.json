@@ -4,7 +4,8 @@
     "type": "module",
     "scripts": {
         "build": "vp build",
-        "dev": "vp dev"
+        "dev": "vp dev",
+        "prepare": "husky"
     },
     "dependencies": {
         "@laravel/passkeys": "^0.2.0",
@@ -25,6 +26,8 @@
         "vite": "npm:@voidzero-dev/vite-plus-core@8.3.8001"
     },
     "devDependencies": {
+        "husky": "^9.1.7",
+        "lint-staged": "^17.6.2",
         "playwright": "^1.65.1"
     }
 }
