@@ -18,6 +18,13 @@ Infer the repo from `git remote -v`; `gh` does this automatically when run insid
 
 File issues only into the user's own repo. Never file into `mattpocock/skills` (the repo these skills come from) unless the user owns it. In a fork, `gh` can default to the upstream parent, so before the first `gh issue create` of a session, check the target with `gh repo view --json nameWithOwner` and confirm it with the user if it is not their repo.
 
+## Integration runs
+
+Skills that merge tickets into one integration branch and close the issues at the end, such as `/implement-spec`, follow two rules on top of **Blocking**:
+
+- **Unblocked within a run**: a ticket whose work is verified and merged into the integration branch unblocks its dependents for that run, even though its issue stays open on GitHub until the end. Start those dependents from the integration branch.
+- **Partial handoff**: when a run stops before the end, the handoff records the integration branch name and SHA, the completed tickets, the tickets ready next, and how and when the still-open issues will be closed (for example by the run that finishes the spec, or by merging its PR).
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
