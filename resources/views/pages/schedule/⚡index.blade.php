@@ -44,6 +44,8 @@ new class extends Component
         $this->team = $team;
         $this->teamId = $team->id;
         $this->date = now()->setTimezone($team->timezone)->format('Y-m-d');
+        $status = session('status');
+        $this->statusMessage = is_string($status) ? $status : null;
     }
 
     public function hydrate(CurrentTeam $currentTeam): void
@@ -210,14 +212,26 @@ new class extends Component
 
         @if ($season !== null)
             @can('create', [\App\Models\Slot::class, $season])
-                <flux:button
-                    variant="primary"
-                    icon="plus"
-                    wire:click="$set('showCreateSlotModal', true)"
-                    data-test="open-create-slot"
-                >
-                    {{ __('Add slot') }}
-                </flux:button>
+                <div class="flex flex-wrap items-center gap-2">
+                    <flux:button
+                        variant="ghost"
+                        icon="squares-plus"
+                        :href="route('schedule.rollout')"
+                        wire:navigate
+                        data-test="open-rollout"
+                    >
+                        {{ __('Roll out slots') }}
+                    </flux:button>
+
+                    <flux:button
+                        variant="primary"
+                        icon="plus"
+                        wire:click="$set('showCreateSlotModal', true)"
+                        data-test="open-create-slot"
+                    >
+                        {{ __('Add slot') }}
+                    </flux:button>
+                </div>
             @endcan
         @endif
     </div>

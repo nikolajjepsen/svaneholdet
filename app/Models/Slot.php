@@ -28,6 +28,12 @@ class Slot extends Model
         return $this->belongsTo(Season::class);
     }
 
+    /** @return BelongsTo<SlotSeries, $this> */
+    public function series(): BelongsTo
+    {
+        return $this->belongsTo(SlotSeries::class, 'slot_series_id');
+    }
+
     /** @return HasMany<Shift, $this> */
     public function shifts(): HasMany
     {

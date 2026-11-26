@@ -28,4 +28,10 @@ class Season extends Model
     {
         return $this->hasMany(Slot::class);
     }
+
+    /** @return HasMany<SlotSeries, $this> */
+    public function slotSeries(): HasMany
+    {
+        return $this->hasMany(SlotSeries::class);
+    }
 }
