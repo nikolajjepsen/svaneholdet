@@ -15,4 +15,15 @@ it('lets a user log in and reach the dashboard', function () {
         ->click('@login-button')
         ->assertPathIs('/dashboard')
         ->assertNoSmoke();
+})->skip('Issue #2 will restore this smoke test using a login link.');
+
+it('lets an authenticated user log out from the dashboard', function () {
+    $this->actingAs(User::factory()->create());
+
+    visit('/dashboard')
+        ->assertPathIs('/dashboard')
+        ->click('@sidebar-menu-button')
+        ->click('button[data-test="logout-button"]:visible')
+        ->assertPathIs('/')
+        ->assertNoSmoke();
 });
