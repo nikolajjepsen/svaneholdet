@@ -14,10 +14,10 @@ use function Illuminate\Support\defer;
 
 class LoginLinks
 {
-    public function request(string $email): void
+    public function request(string $email, ?string $ip = null): void
     {
         $email = Str::lower($email);
-        if (RateLimiter::increment('login-link:'.hash('sha256', $email), decaySeconds: 600) > 3) {
+        if (RateLimiter::increment('login-link:'.hash('sha256', $email.'|'.($ip ?? '')), decaySeconds: 600) > 3) {
             return;
         }
 

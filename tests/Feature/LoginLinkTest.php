@@ -102,7 +102,7 @@ it('refuses to consume a link after the user loses their last active membership'
     $this->assertGuest();
 });
 
-it('sends at most three links per normalized email in ten minutes', function () {
+it('sends at most three links per normalized email and ip in ten minutes', function () {
     Mail::fake();
     $this->freezeTime();
     $teams = Team::factory()->count(2)->create();
@@ -118,10 +118,13 @@ it('sends at most three links per normalized email in ten minutes', function () 
     $this->post('/login', ['email' => $other->email]);
     Mail::assertSent(LoginLinkMail::class, fn (LoginLinkMail $mail): bool => $mail->hasTo($other->email));
 
+    $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.2'])->post('/login', ['email' => $member->email]);
+    expect(Mail::sent(LoginLinkMail::class, fn (LoginLinkMail $mail): bool => $mail->hasTo($member->email)))->toHaveCount(4);
+
     $this->travel(10)->minutes();
     $this->post('/login', ['email' => $member->email]);
 
-    expect(Mail::sent(LoginLinkMail::class, fn (LoginLinkMail $mail): bool => $mail->hasTo($member->email)))->toHaveCount(4);
+    expect(Mail::sent(LoginLinkMail::class, fn (LoginLinkMail $mail): bool => $mail->hasTo($member->email)))->toHaveCount(5);
 });
 
 it('renews the ninety-day session when used and expires it after ninety idle days', function () {

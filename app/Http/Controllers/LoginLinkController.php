@@ -18,7 +18,7 @@ class LoginLinkController
         if (is_string($email) && Validator::make(['email' => $email], [
             'email' => ['required', 'email', 'max:255'],
         ])->passes()) {
-            $loginLinks->request($email);
+            $loginLinks->request($email, $request->ip());
         }
 
         return to_route('login')->with('status', __('Check your email. If you have access, we sent you a login link.'));
