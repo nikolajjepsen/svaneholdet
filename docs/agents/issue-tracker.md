@@ -13,6 +13,9 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: post the explanation with `gh issue comment <number> --body "..."`, then `gh issue close <number>`. On an already-closed issue, `gh issue close --comment` drops the comment and still exits 0.
+- **Status**: every issue has a status: Backlog, Todo, In progress, In review, Done, Not planned or Duplicate. Set it with `gh api graphql -f query='mutation { setIssueStatus(input: {issueId: "<issue-node-id>", statusId: "<status-id>"}) { clientMutationId } }'`. Get the issue node id with `gh issue view <n> --json id --jq .id`, and the status ids with `gh api graphql -f query='{ repository(owner: "<owner>", name: "<repo>") { planningStatuses(first: 20) { nodes { id name } } } }'`. Done, Not planned and Duplicate close the issue, and Done unblocks its dependents.
+
+Status is the progress record. Set a ticket to In progress when you start it and to Done when it is finished. Don't post progress or checkpoint comments on a parent issue: its sub-issue list and progress bar already show which tickets are done.
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
 
