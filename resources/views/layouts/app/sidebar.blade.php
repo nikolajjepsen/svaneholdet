@@ -1,3 +1,9 @@
+@php
+    $user = auth()->user();
+    $teamResolver = app(\App\Auth\CurrentTeam::class);
+    $currentTeam = request()->attributes->get(\App\Models\Team::class) ?? ($user !== null ? $teamResolver->resolve($user) : null);
+    $activeTeams = $user !== null ? $teamResolver->activeTeams($user) : collect();
+@endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
     <head>
@@ -10,17 +16,21 @@
                 <flux:sidebar.collapse class="lg:hidden" />
             </flux:sidebar.header>
 
+            <x-team-switcher :current-team="$currentTeam" :teams="$activeTeams" location="sidebar" />
+
             <flux:sidebar.nav>
                 <flux:sidebar.group :heading="__('Platform')" class="grid">
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
 
-                    @can('invite', request()->attributes->get(\App\Models\Team::class))
-                        <flux:sidebar.item icon="user-plus" :href="route('invitations.create')" :current="request()->routeIs('invitations.create')" wire:navigate>
-                            {{ __('Invite a volunteer') }}
-                        </flux:sidebar.item>
-                    @endcan
+                    @if ($currentTeam !== null)
+                        @can('invite', $currentTeam)
+                            <flux:sidebar.item icon="user-plus" :href="route('invitations.create')" :current="request()->routeIs('invitations.create')" wire:navigate>
+                                {{ __('Invite a volunteer') }}
+                            </flux:sidebar.item>
+                        @endcan
+                    @endif
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 
@@ -42,6 +52,8 @@
         <!-- Mobile User Menu -->
         <flux:header class="lg:hidden">
             <flux:sidebar.toggle class="lg:hidden" icon="bars-2" inset="left" />
+
+            <x-team-switcher :current-team="$currentTeam" :teams="$activeTeams" location="mobile" />
 
             <flux:spacer />
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CurrentTeamController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\LoginLinkController;
 use App\Http\Controllers\LogoutController;
@@ -23,6 +24,7 @@ Route::middleware(['auth', EnsureCurrentTeam::class])->group(function (): void {
     ]))->name('dashboard');
 
     Route::livewire('invitations/create', 'pages::invitations.create')->name('invitations.create');
+    Route::post('current-team', CurrentTeamController::class)->name('current-team.update');
 });
 Route::post('logout', LogoutController::class)->middleware('auth')->name('logout');
 
