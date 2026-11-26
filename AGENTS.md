@@ -9,10 +9,15 @@ Write code, docs, commits, issues and ADRs in English.
 - The domain language is in `docs/GLOSSARY.md`, not the repo root. Read it before naming anything in the domain. Skills that mention `GLOSSARY.md` mean this file.
 - ADRs live in `docs/adr/` as `0001-slug.md`. Don't reopen a decision that has an ADR without saying so.
 
-## Issue tracker
+## Agent skills
 
-- GitHub Issues on `nikolajjepsen/svaneholdet`. Use `gh`.
-- Triage labels: `ready-for-agent` for a spec or ticket an agent can start on. `needs-triage` for anything that needs a human decision first.
+### Issue tracker
+
+GitHub Issues on `nikolajjepsen/svaneholdet`, via `gh`. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: one glossary at `docs/GLOSSARY.md` and ADRs in `docs/adr/`. See `docs/agents/domain.md`.
 
 ## Local environment
 
