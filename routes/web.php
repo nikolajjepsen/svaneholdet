@@ -23,6 +23,8 @@ Route::middleware(['auth', EnsureCurrentTeam::class])->group(function (): void {
         'team' => $request->attributes->get(Team::class),
     ]))->name('dashboard');
 
+    Route::livewire('schedule', 'pages::schedule.index')->name('schedule.index');
+    Route::livewire('my-shifts', 'pages::my-shifts.index')->name('my-shifts.index');
     Route::livewire('invitations/create', 'pages::invitations.create')->name('invitations.create');
     Route::livewire('members', 'pages::members.index')->name('members.index');
     Route::post('current-team', CurrentTeamController::class)->name('current-team.update');

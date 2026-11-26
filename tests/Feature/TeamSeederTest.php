@@ -14,6 +14,8 @@ it('seeds the configured admin and ten volunteers on Hvid opstilling without sen
     $this->seed(TeamSeeder::class);
 
     $team = Team::query()->where('name', 'Hvid opstilling')->sole();
+    $season = $team->seasons()->where('name', 'Smukfest 2027')->sole();
+    expect($team->current_season_id)->toBe($season->id);
     $admin = User::query()->where('email', 'admin@example.com')->sole();
     expect($admin->name)->toBe('Festival Admin');
     $this->assertDatabaseHas('memberships', [
