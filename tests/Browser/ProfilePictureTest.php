@@ -2,11 +2,10 @@
 
 use App\Models\Membership;
 use App\Models\User;
-use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
-use Symfony\Component\HttpFoundation\Response;
+use Tests\Browser\NormalizeBrowserUploadFiles;
 
 it('lets a user save a name and picture and shows the picture in both user menus', function () {
     config(['filesystems.disks.public.url' => '/storage']);
@@ -48,16 +47,3 @@ it('lets a user save a name and picture and shows the picture in both user menus
         }
     }
 });
-
-class NormalizeBrowserUploadFiles
-{
-    public function handle(Request $request, Closure $next): Response
-    {
-        // Pest's browser server keeps the multipart field name literal instead of parsing it as PHP does.
-        if ($request->files->has('files[]')) {
-            $request->files->set('files', [$request->files->get('files[]')]);
-        }
-
-        return $next($request);
-    }
-}
