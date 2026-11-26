@@ -9,7 +9,6 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./docker/postgres/create-testing-database.sql:/docker-entrypoint-initdb.d/create-testing-database.sql:ro
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "svaneholdet"]
       interval: 5s

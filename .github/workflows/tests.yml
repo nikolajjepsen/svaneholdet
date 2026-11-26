@@ -45,11 +45,6 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Create testing database
-        run: psql -h 127.0.0.1 -U svaneholdet -d svaneholdet -c 'CREATE DATABASE svaneholdet_testing'
-        env:
-          PGPASSWORD: svaneholdet
-
       - name: Setup Application
         run: composer setup
 
