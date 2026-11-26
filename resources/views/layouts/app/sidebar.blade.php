@@ -1,3 +1,11 @@
+@php
+    $user = auth()->user();
+    $teamResolver = app(\App\Auth\CurrentTeam::class);
+    $activeTeams = request()->attributes->get(\App\Auth\CurrentTeam::ACTIVE_TEAMS_ATTRIBUTE)
+        ?? ($user !== null ? $teamResolver->activeTeams($user) : collect());
+    $currentTeam = request()->attributes->get(\App\Models\Team::class)
+        ?? ($user !== null ? $teamResolver->resolve($user, $activeTeams) : null);
+@endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
     <head>
@@ -10,11 +18,27 @@
                 <flux:sidebar.collapse class="lg:hidden" />
             </flux:sidebar.header>
 
+            <x-team-switcher :current-team="$currentTeam" :teams="$activeTeams" location="sidebar" />
+
             <flux:sidebar.nav>
                 <flux:sidebar.group :heading="__('Platform')" class="grid">
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
+
+                    @if ($currentTeam !== null)
+                        @can('manageMembers', $currentTeam)
+                            <flux:sidebar.item icon="users" :href="route('members.index')" :current="request()->routeIs('members.index')" wire:navigate>
+                                {{ __('Members') }}
+                            </flux:sidebar.item>
+                        @endcan
+
+                        @can('invite', $currentTeam)
+                            <flux:sidebar.item icon="user-plus" :href="route('invitations.create')" :current="request()->routeIs('invitations.create')" wire:navigate>
+                                {{ __('Invite a volunteer') }}
+                            </flux:sidebar.item>
+                        @endcan
+                    @endif
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 
@@ -37,12 +61,17 @@
         <flux:header class="lg:hidden">
             <flux:sidebar.toggle class="lg:hidden" icon="bars-2" inset="left" />
 
+            <x-team-switcher :current-team="$currentTeam" :teams="$activeTeams" location="mobile" />
+
             <flux:spacer />
 
             <flux:dropdown position="top" align="end">
                 <flux:profile
+                    :avatar="auth()->user()->profilePictureUrl()"
+                    :avatar:alt="auth()->user()->name"
                     :initials="auth()->user()->initials()"
                     icon-trailing="chevron-down"
+                    data-test="mobile-user-menu-button"
                 />
 
                 <flux:menu>
@@ -51,6 +80,7 @@
                             <div class="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
                                 <flux:avatar
                                     :name="auth()->user()->name"
+                                    :src="auth()->user()->profilePictureUrl()"
                                     :initials="auth()->user()->initials()"
                                 />
 

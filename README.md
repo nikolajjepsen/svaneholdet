@@ -16,6 +16,8 @@ One Laravel 13 app, rendered on the server, with no API between backend and fron
 
 You need PHP 8.4, Composer, Node and Docker.
 
+Profile picture uploads use PHP's GD extension with JPEG, PNG and WebP support. Set `upload_max_filesize=6M` and `post_max_size=8M` in the PHP configuration used by your local server so the app can accept pictures up to 5 MB.
+
 ```sh
 docker compose up -d          # Postgres for dev and tests
 composer setup                # install, .env, key, migrate, build assets

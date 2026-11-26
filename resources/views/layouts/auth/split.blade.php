@@ -14,15 +14,8 @@
                     {{ config('app.name', 'Laravel') }}
                 </a>
 
-                @php
-                    [$message, $author] = str(Illuminate\Foundation\Inspiring::quotes()->random())->explode('-');
-                @endphp
-
                 <div class="relative z-20 mt-auto">
-                    <blockquote class="space-y-2">
-                        <flux:heading size="lg">&ldquo;{{ trim($message) }}&rdquo;</flux:heading>
-                        <footer><flux:heading>{{ trim($author) }}</flux:heading></footer>
-                    </blockquote>
+                    <flux:heading size="lg">{{ __('Shift planning for volunteer teams at Smukfest') }}</flux:heading>
                 </div>
             </div>
             <div class="w-full lg:p-8">

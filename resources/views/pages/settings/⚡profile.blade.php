@@ -1,83 +1,94 @@
 <?php
 
-use App\Concerns\ProfileValidationRules;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Models\User;
 use Flux\Flux;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Image\ImageException;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Session;
-use Illuminate\Support\Str;
-use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Image;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
-new #[Title('Profile settings')] class extends Component {
-    use ProfileValidationRules;
+new class extends Component
+{
+    use WithFileUploads;
 
     public string $name = '';
-    public string $email = '';
 
-    /**
-     * Mount the component.
-     */
+    public $profilePicture = null;
+
     public function mount(): void
     {
         $this->name = Auth::user()->name;
-        $this->email = Auth::user()->email;
     }
 
-    /**
-     * Update the profile information for the currently authenticated user.
-     */
     public function updateProfileInformation(): void
     {
         $user = Auth::user();
+        abort_unless($user, 403);
 
-        if (config('fortify.lowercase_usernames')) {
-            $this->email = Str::lower($this->email);
+        $validated = $this->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'profilePicture' => ['bail', 'nullable', 'file', 'max:5120', 'mimes:jpg,jpeg,png,webp'],
+        ], [
+            'profilePicture.file' => __('Choose a JPG, PNG or WebP image.'),
+            'profilePicture.mimes' => __('Choose a JPG, PNG or WebP image.'),
+            'profilePicture.max' => __('The profile picture must be 5 MB or smaller.'),
+            'profilePicture.uploaded' => __('The profile picture must be 5 MB or smaller.'),
+        ]);
+
+        if (isset($validated['profilePicture'])) {
+            $this->saveProfileWithPicture($user, $validated['name'], $validated['profilePicture']);
+        } else {
+            $user->update(['name' => $validated['name']]);
         }
-
-        $validated = $this->validate($this->profileRules($user->id));
-
-        $user->fill($validated);
-
-        if ($user->isDirty('email')) {
-            $user->email_verified_at = null;
-        }
-
-        $user->save();
 
         Flux::toast(variant: 'success', text: __('Profile updated.'));
     }
 
-    /**
-     * Send an email verification notification to the current user.
-     */
-    public function resendVerificationNotification(): void
+    protected function saveProfileWithPicture(User $user, string $name, UploadedFile $picture): void
     {
-        $user = Auth::user();
+        $disk = Storage::disk('public');
 
-        if ($user->hasVerifiedEmail()) {
-            $this->redirectIntended(default: route('dashboard', absolute: false));
-
-            return;
+        try {
+            $path = Image::fromUpload($picture)->cover(256, 256)->toWebp()->store('profile-pictures', 'public');
+        } catch (ImageException) {
+            throw ValidationException::withMessages(['profilePicture' => __('This image could not be opened.')]);
         }
 
-        $user->sendEmailVerificationNotification();
+        if ($path === false) {
+            throw ValidationException::withMessages(['profilePicture' => __('The profile picture could not be saved. Please try again.')]);
+        }
 
-        Session::flash('status', 'verification-link-sent');
+        try {
+            $previousPath = DB::transaction(function () use ($user, $name, $path): ?string {
+                $previousPath = User::query()->lockForUpdate()->findOrFail($user->id, ['profile_picture_path'])->profile_picture_path;
+                $user->name = $name;
+                $user->profile_picture_path = $path;
+                $user->save();
+
+                return $previousPath;
+            });
+        } catch (Throwable $exception) {
+            $disk->delete($path);
+
+            throw $exception;
+        }
+
+        if ($previousPath !== null) {
+            $disk->delete($previousPath);
+        }
+
+        $this->redirectRoute('profile.edit', navigate: true);
     }
 
-    #[Computed]
-    public function hasUnverifiedEmail(): bool
+    public function render(): View
     {
-        return Auth::user() instanceof MustVerifyEmail && ! Auth::user()->hasVerifiedEmail();
-    }
-
-    #[Computed]
-    public function showDeleteUser(): bool
-    {
-        return ! Auth::user() instanceof MustVerifyEmail
-            || (Auth::user() instanceof MustVerifyEmail && Auth::user()->hasVerifiedEmail());
+        return $this->view()->title(__('Profile settings'));
     }
 }; ?>
 
@@ -86,44 +97,27 @@ new #[Title('Profile settings')] class extends Component {
 
     <flux:heading level="2" class="sr-only">{{ __('Profile settings') }}</flux:heading>
 
-    <x-pages::settings.layout :heading="__('Profile')" :subheading="__('Update your name and email address')">
+    <x-pages::settings.layout :heading="__('Profile')" :subheading="__('Update your name and profile picture')">
         <form wire:submit="updateProfileInformation" class="my-6 w-full space-y-6">
             <flux:input wire:model="name" :label="__('Name')" type="text" required autofocus autocomplete="name" />
 
-            <div>
-                <flux:input wire:model="email" :label="__('Email')" type="email" required autocomplete="email" />
+            <flux:input :value="Auth::user()->email" :label="__('Email')" type="email" readonly />
 
-                @if ($this->hasUnverifiedEmail)
-                    <div>
-                        <flux:text class="mt-4">
-                            {{ __('Your email address is unverified.') }}
-
-                            <flux:link class="text-sm cursor-pointer" wire:click.prevent="resendVerificationNotification">
-                                {{ __('Click here to re-send the verification email.') }}
-                            </flux:link>
-                        </flux:text>
-
-                        @if (session('status') === 'verification-link-sent')
-                            <flux:text class="mt-2 font-medium !dark:text-green-400 !text-green-600">
-                                {{ __('A new verification link has been sent to your email address.') }}
-                            </flux:text>
-                        @endif
-                    </div>
-                @endif
-            </div>
+            <flux:input
+                wire:model="profilePicture"
+                :label="__('Profile picture')"
+                :description="__('JPG, PNG or WebP, up to 5 MB.')"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+            />
 
             <div class="flex items-center gap-4">
                 <div class="flex items-center justify-end">
-                    <flux:button variant="primary" type="submit" class="w-full" data-test="update-profile-button">
+                    <flux:button variant="primary" type="submit" class="w-full" wire:loading.attr="disabled" wire:target="profilePicture" data-test="update-profile-button">
                         {{ __('Save') }}
                     </flux:button>
                 </div>
-
             </div>
         </form>
-
-        @if ($this->showDeleteUser)
-            <livewire:pages::settings.delete-user-form />
-        @endif
     </x-pages::settings.layout>
 </section>

@@ -2,50 +2,90 @@
 
 namespace App\Models;
 
+use App\Enums\MembershipRole;
+use App\Enums\MembershipStatus;
 use Database\Factories\UserFactory;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Contracts\Translation\HasLocalePreference;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Laravel\Fortify\Contracts\PasskeyUser;
-use Laravel\Fortify\PasskeyAuthenticatable;
-use Laravel\Fortify\TwoFactorAuthenticatable;
 
 /**
  * @property int $id
  * @property string $name
  * @property string $email
- * @property Carbon|null $email_verified_at
- * @property string $password
- * @property string|null $two_factor_secret
- * @property string|null $two_factor_recovery_codes
- * @property Carbon|null $two_factor_confirmed_at
- * @property string|null $remember_token
+ * @property string $locale
+ * @property string|null $profile_picture_path
+ * @property int|null $last_chosen_team_id
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
-class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
+#[Fillable(['name', 'email', 'locale'])]
+class User extends Authenticatable implements HasLocalePreference
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use HasFactory, Notifiable;
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
+    protected $attributes = ['locale' => 'da', 'profile_picture_path' => null, 'last_chosen_team_id' => null];
+
+    protected $rememberTokenName = null;
+
+    public function preferredLocale(): string
     {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-        ];
+        return $this->locale;
+    }
+
+    public function getAuthPassword(): string
+    {
+        return '';
+    }
+
+    /** @return HasMany<Membership, $this> */
+    public function memberships(): HasMany
+    {
+        return $this->hasMany(Membership::class);
+    }
+
+    /** @return HasMany<Membership, $this> */
+    public function activeMemberships(): HasMany
+    {
+        return $this->memberships()->where('status', MembershipStatus::Active);
+    }
+
+    public function isAdminOf(Team|int $team): bool
+    {
+        $teamId = $team instanceof Team ? $team->id : $team;
+
+        return $this->activeMemberships()
+            ->where('team_id', $teamId)
+            ->where('role', MembershipRole::Admin)
+            ->exists();
+    }
+
+    /** @return BelongsTo<Team, $this> */
+    public function lastChosenTeam(): BelongsTo
+    {
+        return $this->belongsTo(Team::class, 'last_chosen_team_id');
+    }
+
+    /** @return Attribute<string, string> */
+    protected function email(): Attribute
+    {
+        return Attribute::make(set: fn (string $email): string => Str::lower($email));
+    }
+
+    public function profilePictureUrl(): ?string
+    {
+        return $this->profile_picture_path === null
+            ? null
+            : Storage::disk('public')->url($this->profile_picture_path);
     }
 
     /**

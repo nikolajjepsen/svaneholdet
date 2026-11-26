@@ -113,6 +113,9 @@ return [
     ],
 
     'ignore_paths' => [
+        'login',
+        'login/*',
+        'invitations/accept/*',
         'livewire*',
         'nova-api*',
         'pulse*',
