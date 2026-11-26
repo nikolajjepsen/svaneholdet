@@ -10,6 +10,8 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "ext-gd": "*",
+        "intervention/image": "^4.2",
         "laravel/chisel": "^0.1.0",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
@@ -50,6 +52,7 @@
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
             "@php artisan key:generate",
             "@php artisan migrate --force",
+            "@php artisan storage:link",
             "npm install",
             "npm run build"
         ],
