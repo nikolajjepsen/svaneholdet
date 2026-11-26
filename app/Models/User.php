@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -19,6 +20,7 @@ use Illuminate\Support\Str;
  * @property string $name
  * @property string $email
  * @property string $locale
+ * @property string|null $profile_picture_path
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -28,7 +30,7 @@ class User extends Authenticatable implements HasLocalePreference
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
-    protected $attributes = ['locale' => 'da'];
+    protected $attributes = ['locale' => 'da', 'profile_picture_path' => null];
 
     protected $rememberTokenName = null;
 
@@ -58,6 +60,13 @@ class User extends Authenticatable implements HasLocalePreference
     protected function email(): Attribute
     {
         return Attribute::make(set: fn (string $email): string => Str::lower($email));
+    }
+
+    public function profilePictureUrl(): ?string
+    {
+        return $this->profile_picture_path === null
+            ? null
+            : Storage::disk('public')->url($this->profile_picture_path);
     }
 
     /**

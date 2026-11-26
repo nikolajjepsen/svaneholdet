@@ -47,8 +47,11 @@
 
             <flux:dropdown position="top" align="end">
                 <flux:profile
+                    :avatar="auth()->user()->profilePictureUrl()"
+                    :avatar:alt="auth()->user()->name"
                     :initials="auth()->user()->initials()"
                     icon-trailing="chevron-down"
+                    data-test="mobile-user-menu-button"
                 />
 
                 <flux:menu>
@@ -57,6 +60,7 @@
                             <div class="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
                                 <flux:avatar
                                     :name="auth()->user()->name"
+                                    :src="auth()->user()->profilePictureUrl()"
                                     :initials="auth()->user()->initials()"
                                 />
 
