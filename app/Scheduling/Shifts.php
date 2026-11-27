@@ -3,6 +3,7 @@
 namespace App\Scheduling;
 
 use App\Enums\AttendanceStatus;
+use App\Enums\MembershipRole;
 use App\Enums\MembershipStatus;
 use App\Enums\ShiftStatus;
 use App\Mail\ShiftCancelledMail;
@@ -54,14 +55,13 @@ class Shifts
                 ]);
             }
 
-            $requiresConfirmation = $lockedSlot->season->team->settings->shiftsRequireConfirmation;
+            $requiresConfirmation = $membership->role !== MembershipRole::Admin
+                && $lockedSlot->season->team->settings->shiftsRequireConfirmation;
 
-            $confirmedCount = Shift::query()
-                ->where('slot_id', $lockedSlot->id)
-                ->where('status', ShiftStatus::Confirmed)
-                ->count();
+            $isFull = $membership->role === $lockedSlot->capacityRole()
+                && $lockedSlot->confirmedCapacityCount() >= $lockedSlot->capacity;
 
-            if (! $requiresConfirmation && $confirmedCount >= $lockedSlot->capacity) {
+            if (! $requiresConfirmation && $isFull) {
                 throw ValidationException::withMessages([
                     'slot' => __('This slot is full.'),
                 ]);
@@ -69,7 +69,7 @@ class Shifts
 
             $warnings = [];
 
-            if ($requiresConfirmation && $confirmedCount >= $lockedSlot->capacity) {
+            if ($requiresConfirmation && $isFull) {
                 $warnings[] = __('This slot is already full. You can still send a request, and an admin will decide if you get a place.');
             }
 
@@ -142,14 +142,11 @@ class Shifts
                 memberName: $targetMembership->user->name,
             );
 
-            $confirmedCount = Shift::query()
-                ->where('slot_id', $lockedSlot->id)
-                ->where('status', ShiftStatus::Confirmed)
-                ->count();
+            $confirmedCount = $lockedSlot->confirmedCapacityCount();
 
             $warnings = [];
 
-            if ($confirmedCount >= $lockedSlot->capacity) {
+            if ($targetMembership->role === $lockedSlot->capacityRole() && $confirmedCount >= $lockedSlot->capacity) {
                 $warnings[] = __('This slot is already full (:confirmed / :capacity). Assigning :name will put it over capacity.', [
                     'confirmed' => $confirmedCount,
                     'capacity' => $lockedSlot->capacity,
@@ -209,14 +206,11 @@ class Shifts
                 memberName: $lockedShift->membership->user->name,
             );
 
-            $confirmedCount = Shift::query()
-                ->where('slot_id', $lockedSlot->id)
-                ->where('status', ShiftStatus::Confirmed)
-                ->count();
+            $confirmedCount = $lockedSlot->confirmedCapacityCount();
 
             $warnings = [];
 
-            if ($confirmedCount >= $lockedSlot->capacity) {
+            if ($lockedShift->membership->role === $lockedSlot->capacityRole() && $confirmedCount >= $lockedSlot->capacity) {
                 $warnings[] = __('This slot is already full (:confirmed / :capacity). Confirming :name will put it over capacity.', [
                     'confirmed' => $confirmedCount,
                     'capacity' => $lockedSlot->capacity,

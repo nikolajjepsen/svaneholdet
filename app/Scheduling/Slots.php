@@ -69,10 +69,7 @@ class Slots
                 ]);
             }
 
-            $confirmedCount = Shift::query()
-                ->where('slot_id', $lockedSlot->id)
-                ->where('status', ShiftStatus::Confirmed)
-                ->count();
+            $confirmedCount = $lockedSlot->confirmedCapacityCount();
 
             if ($capacity < $lockedSlot->capacity && $capacity < $confirmedCount && ! $acceptWarnings) {
                 return new SlotActionResult(warnings: [

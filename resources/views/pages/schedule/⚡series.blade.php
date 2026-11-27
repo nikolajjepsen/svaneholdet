@@ -195,6 +195,7 @@ new class extends Component
                 'shifts as confirmed_shifts_count' => fn ($query) => $query->where('status', ShiftStatus::Confirmed),
                 'shifts as pending_shifts_count' => fn ($query) => $query->where('status', ShiftStatus::Pending),
             ])
+            ->with('confirmedShifts:id,slot_id,membership_id', 'confirmedShifts.membership:id,role')
             ->orderBy('starts_at')
             ->orderBy('id')
             ->get();
@@ -312,7 +313,7 @@ new class extends Component
                     @php
                         $startsLocal = $slot->starts_at->setTimezone($timezone);
                         $endsLocal = $slot->ends_at->setTimezone($timezone);
-                        $confirmedCount = (int) $slot->confirmed_shifts_count;
+                        $confirmedCount = $slot->capacityCountingShifts($slot->confirmedShifts)->count();
                     @endphp
                     <flux:card wire:key="series-slot-{{ $slot->id }}" data-test="series-slot-{{ $slot->id }}">
                         <div class="flex flex-wrap items-center justify-between gap-3">

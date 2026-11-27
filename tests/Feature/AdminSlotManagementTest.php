@@ -70,7 +70,7 @@ it('lets an admin assign any active member, themselves included, confirmed at on
         ->set('assignMembershipId', $adminMembership->id)
         ->call('assignMember')
         ->assertHasNoErrors()
-        ->assertSee('2 / 3')
+        ->assertSee('1 / 3')
         ->assertSee('Alice Admin');
 
     $adminShift = Shift::query()
@@ -114,7 +114,8 @@ it('lets an admin cancel a member shift at any time, including after the deadlin
         ->call('cancelShift', $volunteerShift->id)
         ->assertHasNoErrors()
         ->assertSee('Shift cancelled.')
-        ->assertSee('1 / 3');
+        ->assertSee('0 / 3')
+        ->assertSee('Alice Admin');
 
     expect($volunteerShift->fresh()->status)->toBe(ShiftStatus::Cancelled);
 

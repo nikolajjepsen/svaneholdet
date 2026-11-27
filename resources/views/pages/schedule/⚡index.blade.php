@@ -1,6 +1,7 @@
 <?php
 
 use App\Auth\CurrentTeam;
+use App\Enums\MembershipRole;
 use App\Enums\ShiftStatus;
 use App\Models\Season;
 use App\Models\Shift;
@@ -206,7 +207,6 @@ new class extends Component
 
         if ($season !== null) {
             $slots = $season->slots()
-                ->withCount(['shifts as confirmed_shifts_count' => fn ($query) => $query->where('status', ShiftStatus::Confirmed)])
                 ->when($isAdmin, fn ($query) => $query->withCount([
                     'shifts as pending_shifts_count' => fn ($shiftsQuery) => $shiftsQuery->where('status', ShiftStatus::Pending),
                 ]))
@@ -214,12 +214,13 @@ new class extends Component
                     ->where('membership_id', $membership?->id)
                     ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value]),
                 ])
-                ->when($showConfirmedVolunteerNames, fn ($query) => $query->with([
+                ->with([
                     'confirmedShifts' => fn ($shiftsQuery) => $shiftsQuery
+                        ->select(['id', 'slot_id', 'membership_id'])
                         ->orderBy('confirmed_at')
                         ->orderBy('id')
-                        ->with('membership.user'),
-                ]))
+                        ->with('membership:id,role,user_id', 'membership.user:id,name'),
+                ])
                 ->orderBy('starts_at')
                 ->orderBy('ends_at')
                 ->orderBy('id')
@@ -249,7 +250,7 @@ new class extends Component
             'isAdmin' => $isAdmin,
             'timezone' => $timezone,
             'showConfirmedVolunteerNames' => $showConfirmedVolunteerNames,
-            'shiftsRequireConfirmation' => $this->team->settings->shiftsRequireConfirmation,
+            'shiftsRequireConfirmation' => ! $isAdmin && $this->team->settings->shiftsRequireConfirmation,
             'days' => $days,
         ])->title(__('Schedule'));
     }
@@ -326,7 +327,9 @@ new class extends Component
                                     $startsLocal = $slot->starts_at->setTimezone($timezone);
                                     $endsLocal = $slot->ends_at->setTimezone($timezone);
                                     $isOvernight = ! $startsLocal->isSameDay($endsLocal);
-                                    $confirmedCount = (int) $slot->confirmed_shifts_count;
+                                    $capacityShifts = $slot->capacityCountingShifts($slot->confirmedShifts);
+                                    $confirmedCount = $capacityShifts->count();
+                                    $confirmedAdmins = $slot->confirmedShifts->whereStrict('membership.role', MembershipRole::Admin);
                                     $pendingCount = $isAdmin ? (int) $slot->pending_shifts_count : 0;
                                     $displayedCount = $isAdmin ? $confirmedCount : min($confirmedCount, $slot->capacity);
                                     $memberShift = $slot->shifts->first();
@@ -357,15 +360,24 @@ new class extends Component
                                         </div>
                                     </div>
 
-                                    @if ($showConfirmedVolunteerNames && $slot->confirmedShifts->isNotEmpty())
+                                    @if ($showConfirmedVolunteerNames && $capacityShifts->isNotEmpty())
                                         @php
                                             $displayedConfirmedShifts = $isAdmin
-                                                ? $slot->confirmedShifts
-                                                : $slot->confirmedShifts->take($slot->capacity);
+                                                ? $capacityShifts
+                                                : $capacityShifts->take($slot->capacity);
                                         @endphp
                                         <flux:text class="text-sm" data-test="confirmed-names-slot-{{ $slot->id }}">
                                             {{ $displayedConfirmedShifts->map(fn ($shift): string => $shift->membership->user->firstName())->join(', ') }}
                                         </flux:text>
+                                    @endif
+
+                                    @if ($confirmedAdmins->isNotEmpty())
+                                        <div>
+                                            <flux:heading size="sm" level="3">{{ __('Admins') }}</flux:heading>
+                                            <flux:text class="text-sm">
+                                                {{ $confirmedAdmins->map(fn (Shift $shift): string => $shift->membership->user->firstName())->join(', ') }}
+                                            </flux:text>
+                                        </div>
                                     @endif
 
                                     <div class="flex flex-wrap items-center justify-end gap-2">
@@ -425,7 +437,7 @@ new class extends Component
                                             >
                                                 {{ __('Withdraw') }}
                                             </flux:button>
-                                        @elseif ($isFull && ! $shiftsRequireConfirmation)
+                                        @elseif ($isFull && ! $isAdmin && ! $shiftsRequireConfirmation)
                                             <flux:badge size="sm" color="zinc" data-test="full-slot-{{ $slot->id }}">
                                                 {{ __('Full') }}
                                             </flux:badge>

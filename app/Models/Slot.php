@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Enums\MembershipRole;
 use App\Enums\ShiftStatus;
 use Carbon\CarbonImmutable;
 use Database\Factories\SlotFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -44,6 +46,27 @@ class Slot extends Model
     public function confirmedShifts(): HasMany
     {
         return $this->shifts()->where('status', ShiftStatus::Confirmed);
+    }
+
+    public function capacityRole(): MembershipRole
+    {
+        return MembershipRole::Volunteer;
+    }
+
+    public function confirmedCapacityCount(): int
+    {
+        return $this->confirmedShifts()
+            ->whereRelation('membership', 'role', $this->capacityRole())
+            ->count();
+    }
+
+    /**
+     * @param  Collection<int, Shift>  $confirmedShifts
+     * @return Collection<int, Shift>
+     */
+    public function capacityCountingShifts(Collection $confirmedShifts): Collection
+    {
+        return $confirmedShifts->filter(fn (Shift $shift): bool => $shift->membership->role === $this->capacityRole());
     }
 
     /** @return HasMany<Shift, $this> */

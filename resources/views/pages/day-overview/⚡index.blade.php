@@ -1,7 +1,9 @@
 <?php
 
 use App\Auth\CurrentTeam;
+use App\Enums\MembershipRole;
 use App\Models\Season;
+use App\Models\Shift;
 use App\Models\Slot;
 use App\Models\Team;
 use App\Models\User;
@@ -173,7 +175,8 @@ new class extends Component
                     $endsLocal = $slot->ends_at->setTimezone($timezone);
                     $isOvernight = ! $startsLocal->isSameDay($endsLocal->subSecond());
                     $startedPreviousDay = $startsLocal->format('Y-m-d') !== $dateKey;
-                    $confirmedCount = (int) $slot->confirmed_shifts_count;
+                    $confirmedCount = $slot->capacityCountingShifts($slot->confirmedShifts)->count();
+                    $confirmedAdmins = $slot->confirmedShifts->whereStrict('membership.role', MembershipRole::Admin);
                     $pendingCount = (int) $slot->pending_shifts_count;
                     $isFull = $confirmedCount >= $slot->capacity;
                 @endphp
@@ -188,6 +191,15 @@ new class extends Component
                             <flux:text class="text-xs">{{ __('Started previous day') }}</flux:text>
                         @elseif ($isOvernight)
                             <flux:text class="text-xs">{{ __('Ends next day') }}</flux:text>
+                        @endif
+
+                        @if ($confirmedAdmins->isNotEmpty())
+                            <div class="mt-2">
+                                <flux:heading size="sm" level="3">{{ __('Admins') }}</flux:heading>
+                                <flux:text class="text-sm">
+                                    {{ $confirmedAdmins->map(fn (Shift $shift): string => $shift->membership->user->firstName())->join(', ') }}
+                                </flux:text>
+                            </div>
                         @endif
                     </div>
 
