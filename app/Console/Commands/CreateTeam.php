@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Enums\MembershipRole;
 use App\Enums\MembershipStatus;
+use App\Models\Season;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Console\Command;
@@ -45,6 +46,8 @@ class CreateTeam extends Command
                 ['name' => $input['admin name']],
             );
             $team = Team::query()->create(['name' => $input['team name']]);
+            $season = $team->seasons()->create(['name' => Season::DEFAULT_NAME]);
+            $team->update(['current_season_id' => $season->id]);
 
             $team->memberships()->create([
                 'user_id' => $user->id,

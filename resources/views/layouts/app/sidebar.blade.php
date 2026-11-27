@@ -27,6 +27,24 @@
                     </flux:sidebar.item>
 
                     @if ($currentTeam !== null)
+                        @can('viewAny', [\App\Models\Slot::class, $currentTeam])
+                            <flux:sidebar.item icon="calendar-days" :href="route('schedule.index')" :current="request()->routeIs('schedule.index')" wire:navigate>
+                                {{ __('Schedule') }}
+                            </flux:sidebar.item>
+                        @endcan
+
+                        @can('viewAny', [\App\Models\SlotSeries::class, $currentTeam])
+                            <flux:sidebar.item icon="squares-plus" :href="route('schedule.rollout')" :current="request()->routeIs('schedule.rollout')" wire:navigate>
+                                {{ __('Roll out slots') }}
+                            </flux:sidebar.item>
+                        @endcan
+
+                        @can('viewAny', [\App\Models\Shift::class, $currentTeam])
+                            <flux:sidebar.item icon="clock" :href="route('my-shifts.index')" :current="request()->routeIs('my-shifts.index')" wire:navigate>
+                                {{ __('My shifts') }}
+                            </flux:sidebar.item>
+                        @endcan
+
                         @can('manageMembers', $currentTeam)
                             <flux:sidebar.item icon="users" :href="route('members.index')" :current="request()->routeIs('members.index')" wire:navigate>
                                 {{ __('Members') }}
@@ -36,6 +54,12 @@
                         @can('invite', $currentTeam)
                             <flux:sidebar.item icon="user-plus" :href="route('invitations.create')" :current="request()->routeIs('invitations.create')" wire:navigate>
                                 {{ __('Invite a volunteer') }}
+                            </flux:sidebar.item>
+                        @endcan
+
+                        @can('updateSettings', $currentTeam)
+                            <flux:sidebar.item icon="cog-6-tooth" :href="route('team.settings')" :current="request()->routeIs('team.settings')" wire:navigate>
+                                {{ __('Team settings') }}
                             </flux:sidebar.item>
                         @endcan
                     @endif

@@ -24,11 +24,14 @@ it('creates two teams with one active admin account and sends no mail', function
     $userId = DB::table('users')->where('email', 'admin@example.com')->where('name', 'First Admin')->value('id');
     expect($userId)->not->toBeNull();
     foreach (['Hvid opstilling', 'Another team'] as $name) {
-        $teamId = DB::table('teams')->where('name', $name)->where('timezone', 'Europe/Copenhagen')->value('id');
-        expect($teamId)->not->toBeNull();
+        $team = DB::table('teams')->where('name', $name)->where('timezone', 'Europe/Copenhagen')->first();
+        expect($team)->not->toBeNull();
+        $seasonId = DB::table('seasons')->where('team_id', $team->id)->where('name', 'Smukfest 2027')->value('id');
+        expect($seasonId)->not->toBeNull();
+        expect($team->current_season_id)->toBe($seasonId);
         $this->assertDatabaseHas('memberships', [
             'user_id' => $userId,
-            'team_id' => $teamId,
+            'team_id' => $team->id,
             'role' => 'admin',
             'status' => 'active',
         ]);

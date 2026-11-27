@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Enums\MembershipRole;
 use App\Enums\MembershipStatus;
+use App\Models\Season;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -16,6 +17,11 @@ class TeamSeeder extends Seeder
     {
         DB::transaction(function (): void {
             $team = Team::query()->firstOrCreate(['name' => 'Hvid opstilling']);
+            $season = $team->seasons()->firstOrCreate(['name' => Season::DEFAULT_NAME]);
+
+            if ($team->current_season_id === null) {
+                $team->update(['current_season_id' => $season->id]);
+            }
             $admin = User::query()->firstOrCreate(
                 ['email' => Str::lower(trim(config()->string('seed.admin_email')))],
                 ['name' => config()->string('seed.admin_name')],
