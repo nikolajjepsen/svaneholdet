@@ -25,6 +25,7 @@ Route::middleware(['auth', EnsureCurrentTeam::class])->group(function (): void {
 
     Route::livewire('schedule', 'pages::schedule.index')->name('schedule.index');
     Route::livewire('day-overview', 'pages::day-overview.index')->name('day-overview.index');
+    Route::livewire('hours', 'pages::hours.index')->name('hours.index');
     Route::livewire('schedule/slots/{slot}', 'pages::schedule.slot')->name('schedule.slots.show');
     Route::livewire('schedule/series/{slotSeries}', 'pages::schedule.series')->name('schedule.series.show');
     Route::livewire('schedule/rollout', 'pages::schedule.rollout')->name('schedule.rollout');
