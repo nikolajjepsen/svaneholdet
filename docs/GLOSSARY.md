@@ -28,7 +28,7 @@ What a **Member** may do on a **Team**: **Volunteer** or **Admin**.
 The **Role** of a **Member** who takes shifts. Every **Membership** starts as **Volunteer**.
 
 **Admin**:
-The **Role** of a **Member** who runs the **Team**, given by another **Admin** through promotion. An **Admin** can also take shifts like a **Volunteer**.
+The **Role** of a **Member** who runs the **Team**, given by another **Admin** through promotion. An **Admin** can also take **Shifts**, which do not count toward **Capacity** on regular **Slots**.
 _Avoid_: Manager, leader, organiser
 
 **Invitation**:
@@ -53,12 +53,16 @@ _Avoid_: Shift plan, day list, calendar
 A planned need for people on the **Schedule**: a start, an end and a **Capacity**. It can end the day after it starts.
 _Avoid_: Opening, position, interval
 
+**Admin-only slot**:
+A **Slot** that only **Admins** can see on the **Schedule**, sign up for, or be assigned to, and whose **Capacity** counts **Admins**.
+_Avoid_: Leader slot, coordinator slot, staff slot
+
 **Slot series**:
 The **Slots** one rollout interval creates, one per picked date, which an **Admin** can change or delete together.
 _Avoid_: Shift series, pattern, recurrence
 
 **Capacity**:
-The number of **Volunteers** a **Slot** asks for. **Admins** may confirm more **Shifts** than the **Capacity**.
+The number of **Volunteers** a regular **Slot** asks for, or the number of **Admins** an **Admin-only slot** asks for. **Admins** may confirm more **Shifts** than the **Capacity**.
 _Avoid_: Places, seats, requested volunteers
 
 **Shift**:
@@ -90,3 +94,7 @@ _Avoid_: Recorded hours, working hours, actual hours, logged hours
 **Hours overview**:
 The **Admin** view of every **Member**'s **Planned hours**, **Worked hours**, and **Shift** history for the **Season**.
 _Avoid_: Timesheet, hour report
+
+**Hour goal**:
+The target number of hours a **Member** is expected to work in a **Season**, defaulting to the **Team** setting with an optional per-**Member** override. Progress counts confirmed and pending **Shifts** (using adjusted times or zero for a **No-show**, and counting overlapping time once).
+_Avoid_: Quota, target hours, hour requirement
