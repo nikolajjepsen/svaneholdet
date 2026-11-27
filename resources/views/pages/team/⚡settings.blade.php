@@ -20,6 +20,8 @@ new class extends Component
 
     public string $cancellationDeadlineHours = '';
 
+    public string $defaultHourGoal = '';
+
     public bool $shiftsRequireConfirmation = TeamSettings::DEFAULT_SHIFTS_REQUIRE_CONFIRMATION;
 
     public bool $showConfirmedVolunteerNames = TeamSettings::DEFAULT_SHOW_CONFIRMED_VOLUNTEER_NAMES;
@@ -37,6 +39,7 @@ new class extends Component
 
         $settings = $team->settings;
         $this->cancellationDeadlineHours = (string) $settings->cancellationDeadlineHours;
+        $this->defaultHourGoal = (string) $settings->defaultHourGoal;
         $this->shiftsRequireConfirmation = $settings->shiftsRequireConfirmation;
         $this->showConfirmedVolunteerNames = $settings->showConfirmedVolunteerNames;
     }
@@ -57,19 +60,24 @@ new class extends Component
 
         $validated = $this->validate([
             'cancellationDeadlineHours' => ['required', 'integer', 'min:0'],
+            'defaultHourGoal' => ['nullable', 'integer', 'min:1'],
             'shiftsRequireConfirmation' => ['boolean'],
             'showConfirmedVolunteerNames' => ['boolean'],
         ], [
             'cancellationDeadlineHours.required' => __('Enter a whole number of hours, 0 or more.'),
             'cancellationDeadlineHours.integer' => __('Enter a whole number of hours, 0 or more.'),
             'cancellationDeadlineHours.min' => __('Enter a whole number of hours, 0 or more.'),
+            'defaultHourGoal.integer' => __('Enter a whole number of hours, 1 or more.'),
+            'defaultHourGoal.min' => __('Enter a whole number of hours, 1 or more.'),
         ]);
 
+        $defaultHourGoal = $validated['defaultHourGoal'];
         $this->team->update([
             'settings' => new TeamSettings(
                 cancellationDeadlineHours: (int) $validated['cancellationDeadlineHours'],
                 shiftsRequireConfirmation: (bool) $validated['shiftsRequireConfirmation'],
                 showConfirmedVolunteerNames: (bool) $validated['showConfirmedVolunteerNames'],
+                defaultHourGoal: $defaultHourGoal === null || $defaultHourGoal === '' ? null : (int) $defaultHourGoal,
             ),
         ]);
 
@@ -136,6 +144,13 @@ new class extends Component
             :description="__('Show the first names of confirmed volunteers on each slot.')"
             data-test="show-confirmed-volunteer-names"
         />
+
+        <flux:field>
+            <flux:label>{{ __('Default hour goal') }}</flux:label>
+            <flux:description>{{ __('Leave blank to use no default hour goal.') }}</flux:description>
+            <flux:input type="number" name="defaultHourGoal" min="1" step="1" wire:model="defaultHourGoal" />
+            <flux:error name="defaultHourGoal" />
+        </flux:field>
 
         <flux:button variant="primary" type="submit" data-test="save-team-settings">
             {{ __('Save') }}

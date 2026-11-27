@@ -5,6 +5,7 @@ use App\Enums\MembershipStatus;
 use App\Mail\InvitationMail;
 use App\Models\Invitation;
 use App\Models\Membership;
+use App\Models\Season;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Support\Facades\Mail;
@@ -75,5 +76,50 @@ it('lets an admin manage members and pending invitations from the member list', 
         ->assertPathIs('/')
         ->navigate(parse_url($resentUrl, PHP_URL_PATH))
         ->assertSee('This invitation was withdrawn.')
+        ->assertNoSmoke();
+});
+
+it('lets an admin configure a team hour goal and set, exempt, or reset a member’s season override', function () {
+    $team = Team::factory()->create();
+    $season = Season::factory()->for($team)->create();
+    $team->update(['current_season_id' => $season->id]);
+    $admin = User::factory()->create(['locale' => 'en']);
+    Membership::factory()->admin()->for($admin)->for($team)->create();
+    $member = Membership::factory()->for($team)->create();
+    $editHourGoal = '@edit-hour-goal-'.$member->id;
+
+    $this->actingAs($admin);
+
+    visit('/team/settings')
+        ->assertValue('defaultHourGoal', '')
+        ->fill('defaultHourGoal', '24')
+        ->click('@save-team-settings')
+        ->assertSee('Team settings saved.')
+        ->click('Members')
+        ->assertPathIs('/members')
+        ->assertSee('24 h (team default)')
+        ->click($editHourGoal)
+        ->assertValue('hourGoal', '')
+        ->fill('hourGoal', '16')
+        ->click('@save-hour-goal')
+        ->assertSee('16 h (custom)')
+        ->click($editHourGoal)
+        ->assertValue('hourGoal', '16')
+        ->fill('hourGoal', '0')
+        ->click('@save-hour-goal')
+        ->assertSee('Exempt')
+        ->click($editHourGoal)
+        ->assertValue('hourGoal', '0')
+        ->fill('hourGoal', '')
+        ->click('@save-hour-goal')
+        ->assertDontSee('Exempt')
+        ->assertSee('24 h (team default)')
+        ->click('Team settings')
+        ->assertValue('defaultHourGoal', '24')
+        ->fill('defaultHourGoal', '')
+        ->click('@save-team-settings')
+        ->assertSee('Team settings saved.')
+        ->click('Members')
+        ->assertSee('No hour goal')
         ->assertNoSmoke();
 });
