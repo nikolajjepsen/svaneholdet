@@ -33,6 +33,12 @@
                             </flux:sidebar.item>
                         @endcan
 
+                        @can('viewDayOverview', $currentTeam)
+                            <flux:sidebar.item icon="clipboard-document-list" :href="route('day-overview.index')" :current="request()->routeIs('day-overview.index')" wire:navigate>
+                                {{ __('Day overview') }}
+                            </flux:sidebar.item>
+                        @endcan
+
                         @can('viewAny', [\App\Models\SlotSeries::class, $currentTeam])
                             <flux:sidebar.item icon="squares-plus" :href="route('schedule.rollout')" :current="request()->routeIs('schedule.rollout')" wire:navigate>
                                 {{ __('Roll out slots') }}
