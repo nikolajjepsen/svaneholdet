@@ -34,25 +34,24 @@ class Rollout
 
         foreach ($normalizedDates as $date) {
             foreach ($normalizedIntervals as $intervalIndex => $interval) {
-                [$startsAt, $endsAt, $endsNextDay] = $this->resolveTimestamps(
+                $window = SlotWindow::fromLocal(
                     $date,
                     $interval['start'],
                     $interval['end'],
                     $timezone,
+                    startErrorKey: 'intervals',
+                    endErrorKey: 'intervals',
                 );
 
-                $startsAtUtc = $startsAt->utc();
-                $endsAtUtc = $endsAt->utc();
-
-                $startTimestamps[$startsAtUtc->toIso8601String()] = $startsAtUtc;
+                $startTimestamps[$window->startsAt->toIso8601String()] = $window->startsAt;
 
                 $planned[] = [
                     'date' => $date,
-                    'startsAt' => $startsAtUtc,
-                    'endsAt' => $endsAtUtc,
+                    'startsAt' => $window->startsAt,
+                    'endsAt' => $window->endsAt,
                     'startTime' => $interval['start'],
                     'endTime' => $interval['end'],
-                    'endsNextDay' => $endsNextDay,
+                    'endsNextDay' => $window->endsNextDay,
                     'capacity' => $interval['capacity'],
                     'isDuplicate' => false,
                     'intervalIndex' => $intervalIndex,
@@ -122,18 +121,20 @@ class Rollout
                 ]);
 
                 foreach ($normalizedDates as $date) {
-                    [$startsAt, $endsAt] = $this->resolveTimestamps(
+                    $window = SlotWindow::fromLocal(
                         $date,
                         $interval['start'],
                         $interval['end'],
                         $timezone,
+                        startErrorKey: 'intervals',
+                        endErrorKey: 'intervals',
                     );
 
                     Slot::query()->create([
                         'season_id' => $season->id,
                         'slot_series_id' => $series->id,
-                        'starts_at' => $startsAt->utc(),
-                        'ends_at' => $endsAt->utc(),
+                        'starts_at' => $window->startsAt,
+                        'ends_at' => $window->endsAt,
                         'capacity' => $interval['capacity'],
                     ]);
                 }
@@ -228,29 +229,6 @@ class Rollout
         }
 
         return $normalized;
-    }
-
-    /**
-     * @return array{0: CarbonImmutable, 1: CarbonImmutable, 2: bool}
-     */
-    private function resolveTimestamps(string $date, string $startTime, string $endTime, string $timezone): array
-    {
-        $startsAt = CarbonImmutable::createFromFormat('!Y-m-d H:i', $date.' '.$startTime, $timezone);
-        $endsAt = CarbonImmutable::createFromFormat('!Y-m-d H:i', $date.' '.$endTime, $timezone);
-
-        if ($startsAt === null || $endsAt === null) {
-            throw ValidationException::withMessages([
-                'intervals' => __('Enter valid times.'),
-            ]);
-        }
-
-        $endsNextDay = $endsAt->lessThan($startsAt);
-
-        if ($endsNextDay) {
-            $endsAt = $endsAt->addDay();
-        }
-
-        return [$startsAt, $endsAt, $endsNextDay];
     }
 
     private function timestampKey(CarbonImmutable $startsAt, CarbonImmutable $endsAt): string

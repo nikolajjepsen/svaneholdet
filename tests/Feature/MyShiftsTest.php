@@ -100,3 +100,36 @@ it('follows the current team on my shifts across two teams', function () {
         ->assertSee('5 h')
         ->assertDontSee('data-test="upcoming-shift-'.$shiftA->id.'"', false);
 });
+
+it('shows only shifts from the team current season on my shifts', function () {
+    $this->travelTo(CarbonImmutable::parse('2027-08-01 12:00:00', 'Europe/Copenhagen'));
+
+    $team = Team::factory()->create(['name' => 'Bar Team', 'timezone' => 'Europe/Copenhagen']);
+    $oldSeason = Season::factory()->for($team)->create(['name' => 'Smukfest 2026']);
+    $currentSeason = Season::factory()->for($team)->create(['name' => 'Smukfest 2027']);
+    $team->update(['current_season_id' => $currentSeason->id]);
+
+    $volunteer = User::factory()->create(['locale' => 'en', 'last_chosen_team_id' => $team->id]);
+    $membership = Membership::factory()->for($volunteer)->for($team)->create();
+
+    $oldSlot = Slot::factory()->for($oldSeason)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-03 08:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-03 12:00', 'Europe/Copenhagen')->utc(),
+    ]);
+    $oldShift = Shift::factory()->for($oldSlot)->for($membership)->confirmed()->create();
+
+    $currentSlot = Slot::factory()->for($currentSeason)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-04 14:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-04 20:00', 'Europe/Copenhagen')->utc(),
+    ]);
+    $currentShift = Shift::factory()->for($currentSlot)->for($membership)->confirmed()->create();
+
+    $this->actingAs($volunteer);
+
+    $this->get(route('my-shifts.index'))
+        ->assertOk()
+        ->assertSee('data-test="upcoming-shift-'.$currentShift->id.'"', false)
+        ->assertSee('14:00–20:00')
+        ->assertDontSee('data-test="upcoming-shift-'.$oldShift->id.'"', false)
+        ->assertDontSee('08:00–12:00');
+});

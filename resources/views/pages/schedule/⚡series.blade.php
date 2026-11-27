@@ -6,7 +6,7 @@ use App\Models\Slot;
 use App\Models\SlotSeries;
 use App\Models\Team;
 use App\Models\User;
-use App\Scheduling\Slots;
+use App\Scheduling\Series;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -75,7 +75,7 @@ new class extends Component
         $this->series = $series;
     }
 
-    public function saveSeries(Slots $slots): void
+    public function saveSeries(Series $seriesActions): void
     {
         $this->statusMessage = null;
         $this->resetErrorBag();
@@ -92,12 +92,12 @@ new class extends Component
             $validated['startTime'],
             $validated['endTime'],
             (int) $validated['capacity'],
-            $slots,
+            $seriesActions,
             acceptWarnings: false,
         );
     }
 
-    public function acceptWarnings(Slots $slots): void
+    public function acceptWarnings(Series $seriesActions): void
     {
         $this->statusMessage = null;
         $this->dismissWarnings();
@@ -114,7 +114,7 @@ new class extends Component
             $validated['startTime'],
             $validated['endTime'],
             (int) $validated['capacity'],
-            $slots,
+            $seriesActions,
             acceptWarnings: true,
         );
     }
@@ -133,14 +133,14 @@ new class extends Component
         $this->showDeleteModal = true;
     }
 
-    public function deleteSeries(Slots $slots): void
+    public function deleteSeries(Series $seriesActions): void
     {
         $this->statusMessage = null;
         $this->resetErrorBag();
 
         Gate::authorize('delete', $this->series);
 
-        $slots->deleteSeries($this->series, $this->user(), notifyMembers: $this->notifyMembersOnDelete);
+        $seriesActions->delete($this->series, $this->user(), notifyMembers: $this->notifyMembersOnDelete);
 
         $this->showDeleteModal = false;
         session()->flash('status', __('Slot series deleted.'));
@@ -152,10 +152,10 @@ new class extends Component
         string $startTime,
         string $endTime,
         int $capacity,
-        Slots $slots,
+        Series $seriesActions,
         bool $acceptWarnings,
     ): void {
-        $result = $slots->updateSeries(
+        $result = $seriesActions->update(
             series: $this->series,
             actor: $this->user(),
             startTime: $startTime,

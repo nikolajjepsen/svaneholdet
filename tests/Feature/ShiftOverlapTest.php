@@ -389,3 +389,65 @@ it('detects overlaps across midnight and shows both over-capacity and overlap wa
             ->exists()
     )->toBeTrue();
 });
+
+it('blocks confirming a pending shift that overlaps another team and warns on same-team overlap', function () {
+    [$teamA, $seasonA] = createOverlapTeam('Bar Team', requiresConfirmation: true);
+    [$teamB, $seasonB] = createOverlapTeam('Stage Team');
+
+    $slotA = Slot::factory()->for($seasonA)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-04 10:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-04 16:00', 'Europe/Copenhagen')->utc(),
+        'capacity' => 4,
+    ]);
+
+    $sameTeamSlotA = Slot::factory()->for($seasonA)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-04 14:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-04 20:00', 'Europe/Copenhagen')->utc(),
+        'capacity' => 4,
+    ]);
+
+    $otherTeamSlotB = Slot::factory()->for($seasonB)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-04 12:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-04 18:00', 'Europe/Copenhagen')->utc(),
+        'capacity' => 4,
+    ]);
+
+    $adminA = User::factory()->create(['name' => 'Alice Admin', 'locale' => 'en', 'last_chosen_team_id' => $teamA->id]);
+    Membership::factory()->admin()->for($adminA)->for($teamA)->create();
+
+    $volunteer = User::factory()->create(['name' => 'Bob Volunteer', 'locale' => 'en', 'last_chosen_team_id' => $teamA->id]);
+    $membershipA = Membership::factory()->for($volunteer)->for($teamA)->create();
+    $membershipB = Membership::factory()->for($volunteer)->for($teamB)->create();
+
+    $pendingShift = Shift::factory()->pending()->for($slotA)->for($membershipA)->create();
+    $otherTeamShift = Shift::factory()->confirmed()->for($otherTeamSlotB)->for($membershipB)->create();
+
+    $this->actingAs($adminA);
+
+    Livewire::test('pages::schedule.slot', ['slot' => $slotA])
+        ->call('confirmShift', $pendingShift->id)
+        ->assertHasErrors(['shift'])
+        ->assertSee('Stage Team')
+        ->assertSet('showOverCapacityModal', false);
+
+    expect($pendingShift->fresh()->status)->toBe(ShiftStatus::Pending);
+
+    $otherTeamShift->update(['status' => ShiftStatus::Cancelled]);
+    Shift::factory()->confirmed()->for($sameTeamSlotA)->for($membershipA)->create();
+
+    $component = Livewire::test('pages::schedule.slot', ['slot' => $slotA])
+        ->call('confirmShift', $pendingShift->id)
+        ->assertHasNoErrors()
+        ->assertSet('showOverCapacityModal', true)
+        ->assertSee('14:00–20:00');
+
+    expect($pendingShift->fresh()->status)->toBe(ShiftStatus::Pending);
+
+    $component
+        ->call('acceptOverCapacityWarning')
+        ->assertHasNoErrors()
+        ->assertSet('showOverCapacityModal', false)
+        ->assertSee('Shift confirmed.');
+
+    expect($pendingShift->fresh()->status)->toBe(ShiftStatus::Confirmed);
+});

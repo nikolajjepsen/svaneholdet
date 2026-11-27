@@ -11,8 +11,6 @@ use App\Models\Membership;
 use App\Models\Shift;
 use App\Models\Slot;
 use App\Models\User;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Mail;
@@ -20,6 +18,10 @@ use Illuminate\Validation\ValidationException;
 
 class Shifts
 {
+    public function __construct(
+        private readonly ShiftOverlaps $overlaps,
+    ) {}
+
     public function signUp(Slot $slot, User $actor, bool $acceptWarnings = false): ShiftActionResult
     {
         return DB::transaction(function () use ($slot, $actor, $acceptWarnings): ShiftActionResult {
@@ -71,7 +73,7 @@ class Shifts
 
             $warnings = [
                 ...$warnings,
-                ...$this->checkOverlaps($actor, $lockedSlot, errorField: 'slot'),
+                ...$this->overlaps->checkForMember($actor, $lockedSlot, errorField: 'slot'),
             ];
 
             if ($warnings !== [] && ! $acceptWarnings) {
@@ -131,7 +133,7 @@ class Shifts
                 ]);
             }
 
-            $overlapWarnings = $this->checkOverlaps(
+            $overlapWarnings = $this->overlaps->checkForMember(
                 $targetMembership->user,
                 $lockedSlot,
                 errorField: 'assignMembershipId',
@@ -198,20 +200,33 @@ class Shifts
                 ]);
             }
 
+            $overlapWarnings = $this->overlaps->checkForMember(
+                $lockedShift->membership->user,
+                $lockedSlot,
+                errorField: 'shift',
+                memberName: $lockedShift->membership->user->name,
+            );
+
             $confirmedCount = Shift::query()
                 ->where('slot_id', $lockedSlot->id)
                 ->where('status', ShiftStatus::Confirmed)
                 ->count();
 
-            if ($confirmedCount >= $lockedSlot->capacity && ! $acceptWarnings) {
+            $warnings = [];
+
+            if ($confirmedCount >= $lockedSlot->capacity) {
+                $warnings[] = __('This slot is already full (:confirmed / :capacity). Confirming :name will put it over capacity.', [
+                    'confirmed' => $confirmedCount,
+                    'capacity' => $lockedSlot->capacity,
+                    'name' => $lockedShift->membership->user->name,
+                ]);
+            }
+
+            $warnings = [...$warnings, ...$overlapWarnings];
+
+            if ($warnings !== [] && ! $acceptWarnings) {
                 return [
-                    'result' => new ShiftActionResult(warnings: [
-                        __('This slot is already full (:confirmed / :capacity). Confirming :name will put it over capacity.', [
-                            'confirmed' => $confirmedCount,
-                            'capacity' => $lockedSlot->capacity,
-                            'name' => $lockedShift->membership->user->name,
-                        ]),
-                    ]),
+                    'result' => new ShiftActionResult(warnings: $warnings),
                 ];
             }
 
@@ -393,93 +408,5 @@ class Shifts
         return $user->activeMemberships()
             ->where('team_id', $teamId)
             ->first();
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function checkOverlaps(User $user, Slot $targetSlot, string $errorField, ?string $memberName = null): array
-    {
-        $team = $targetSlot->season->team;
-        $overlappingShifts = $this->findOverlappingShifts($user, $targetSlot);
-
-        $otherTeamOverlap = $overlappingShifts->first(
-            fn (Shift $existingShift): bool => $existingShift->membership->team_id !== $team->id
-        );
-
-        if ($otherTeamOverlap !== null) {
-            $slotLabel = $this->formatSlotDateTime($otherTeamOverlap->slot, $team->timezone);
-            $otherTeamName = $otherTeamOverlap->membership->team->name;
-
-            $message = $memberName !== null
-                ? __(':name already has an overlapping shift on :team (:date, :time).', [
-                    'name' => $memberName,
-                    'team' => $otherTeamName,
-                    'date' => $slotLabel['date'],
-                    'time' => $slotLabel['time'],
-                ])
-                : __('This slot overlaps with a shift on :team (:date, :time).', [
-                    'team' => $otherTeamName,
-                    'date' => $slotLabel['date'],
-                    'time' => $slotLabel['time'],
-                ]);
-
-            throw ValidationException::withMessages([$errorField => $message]);
-        }
-
-        $warnings = [];
-
-        foreach ($overlappingShifts as $sameTeamOverlap) {
-            $slotLabel = $this->formatSlotDateTime($sameTeamOverlap->slot, $team->timezone);
-
-            $warnings[] = $memberName !== null
-                ? __("This slot overlaps with :name's shift on :date (:time).", [
-                    'name' => $memberName,
-                    'date' => $slotLabel['date'],
-                    'time' => $slotLabel['time'],
-                ])
-                : __('This slot overlaps with your shift on :date (:time).', [
-                    'date' => $slotLabel['date'],
-                    'time' => $slotLabel['time'],
-                ]);
-        }
-
-        return $warnings;
-    }
-
-    /**
-     * @return Collection<int, Shift>
-     */
-    private function findOverlappingShifts(User $user, Slot $targetSlot): Collection
-    {
-        return Shift::query()
-            ->where('slot_id', '!=', $targetSlot->id)
-            ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value])
-            ->whereHas('membership', function (Builder $query) use ($user): void {
-                $query->where('user_id', $user->id)
-                    ->where('status', MembershipStatus::Active->value);
-            })
-            ->whereHas('slot', function (Builder $query) use ($targetSlot): void {
-                $query->where('starts_at', '<', $targetSlot->ends_at)
-                    ->where('ends_at', '>', $targetSlot->starts_at);
-            })
-            ->with(['membership.team', 'slot'])
-            ->get()
-            ->sortBy(fn (Shift $shift): string => $shift->slot->starts_at->toIso8601String().'|'.$shift->slot->ends_at->toIso8601String().'|'.$shift->id)
-            ->values();
-    }
-
-    /**
-     * @return array{date: string, time: string}
-     */
-    private function formatSlotDateTime(Slot $slot, string $timezone): array
-    {
-        $startsLocal = $slot->starts_at->setTimezone($timezone);
-        $endsLocal = $slot->ends_at->setTimezone($timezone);
-
-        return [
-            'date' => $startsLocal->translatedFormat('l j. F Y'),
-            'time' => $startsLocal->format('H:i').'–'.$endsLocal->format('H:i'),
-        ];
     }
 }

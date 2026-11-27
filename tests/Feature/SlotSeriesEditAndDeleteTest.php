@@ -9,7 +9,7 @@ use App\Models\Slot;
 use App\Models\SlotSeries;
 use App\Models\Team;
 use App\Models\User;
-use App\Scheduling\Slots;
+use App\Scheduling\Series;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Mail;
@@ -369,10 +369,10 @@ it('forbids volunteers and admins of another team from viewing, editing, or dele
         ->get(route('schedule.series.show', $seriesB))
         ->assertForbidden();
 
-    expect(fn () => app(Slots::class)->updateSeries($seriesB, $adminA, '09:00', '17:00', 5))
+    expect(fn () => app(Series::class)->update($seriesB, $adminA, '09:00', '17:00', 5))
         ->toThrow(AuthorizationException::class);
 
-    expect(fn () => app(Slots::class)->deleteSeries($seriesB, $adminA, notifyMembers: true))
+    expect(fn () => app(Series::class)->delete($seriesB, $adminA, notifyMembers: true))
         ->toThrow(AuthorizationException::class);
 
     expect(SlotSeries::query()->find($seriesB->id))->not->toBeNull();

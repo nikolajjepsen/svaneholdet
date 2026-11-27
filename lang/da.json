@@ -114,7 +114,7 @@
     "Mon": "Man",
     "My shifts": "Mine vagter",
     "Name": "Navn",
-    "New signups wait for an admin to confirm or reject them. Existing pending shifts stay pending if you turn this off.": "Nye tilmeldinger afventer, at en administrator bekræfter eller afviser dem. Eksisterende afventende vagter forbliver afventende, hvis du slår dette fra.",
+    "New shift requests wait for an admin to confirm or reject them. Existing pending shifts stay pending if you turn this off.": "Nye vagtanmodninger afventer, at en administrator bekræfter eller afviser dem. Eksisterende afventende vagter forbliver afventende, hvis du slår dette fra.",
     "Next month": "Næste måned",
     "No confirmed shifts yet.": "Ingen bekræftede vagter endnu.",
     "No file chosen": "Ingen fil valgt",

@@ -125,7 +125,7 @@ new class extends Component
             wire:model="shiftsRequireConfirmation"
             name="shiftsRequireConfirmation"
             :label="__('Require confirmation for shifts')"
-            :description="__('New signups wait for an admin to confirm or reject them. Existing pending shifts stay pending if you turn this off.')"
+            :description="__('New shift requests wait for an admin to confirm or reject them. Existing pending shifts stay pending if you turn this off.')"
             data-test="shifts-require-confirmation"
         />
 

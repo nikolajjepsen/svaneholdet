@@ -6,6 +6,7 @@ use App\Models\Shift;
 use App\Models\Team;
 use App\Models\User;
 use App\Scheduling\Shifts;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -85,9 +86,14 @@ new class extends Component
             ->whereBelongsTo($this->team)
             ->first();
 
-        $shifts = $membership === null
+        $currentSeasonId = $this->team->current_season_id;
+
+        $shifts = ($membership === null || $currentSeasonId === null)
             ? collect()
             : $membership->shifts()
+                ->whereHas('slot', function (Builder $query) use ($currentSeasonId): void {
+                    $query->where('season_id', $currentSeasonId);
+                })
                 ->with('slot')
                 ->get();
 
