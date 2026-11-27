@@ -4,10 +4,13 @@ namespace App\Auth;
 
 use App\Enums\MembershipRole;
 use App\Enums\MembershipStatus;
+use App\Enums\ShiftStatus;
 use App\Models\Membership;
+use App\Models\Shift;
 use App\Models\Team;
 use App\Models\User;
 use Closure;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -41,6 +44,12 @@ class Memberships
             }
 
             $locked->update(['status' => MembershipStatus::Removed]);
+
+            Shift::query()
+                ->where('membership_id', $locked->id)
+                ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value])
+                ->whereHas('slot', fn (Builder $query): Builder => $query->where('starts_at', '>', now()))
+                ->update(['status' => ShiftStatus::Cancelled->value]);
         });
     }
 
