@@ -1,10 +1,12 @@
 <?php
 
 use App\Auth\CurrentTeam;
+use App\Enums\AttendanceStatus;
 use App\Enums\ShiftStatus;
 use App\Models\Shift;
 use App\Models\Team;
 use App\Models\User;
+use App\Scheduling\MemberHours;
 use App\Scheduling\Shifts;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -76,11 +78,11 @@ new class extends Component
         return $user;
     }
 
-    public function render(): View
+    public function render(MemberHours $memberHours): View
     {
         $user = $this->user();
         $timezone = $this->team->timezone;
-        $now = now();
+        $now = now()->toImmutable();
 
         $membership = $user->activeMemberships()
             ->whereBelongsTo($this->team)
@@ -97,6 +99,8 @@ new class extends Component
                 ->with('slot')
                 ->get();
 
+        $hoursSummary = $memberHours->summarize($shifts, $now);
+
         $upcomingShifts = $shifts
             ->filter(fn (Shift $shift): bool => $shift->slot->ends_at->greaterThanOrEqualTo($now))
             ->sortBy(fn (Shift $shift): int => $shift->slot->starts_at->getTimestamp())
@@ -110,6 +114,9 @@ new class extends Component
         return $this->view([
             'team' => $this->team,
             'timezone' => $timezone,
+            'hoursSummary' => $hoursSummary,
+            'memberHours' => $memberHours,
+            'now' => $now,
             'upcomingShifts' => $upcomingShifts,
             'pastShifts' => $pastShifts,
         ])->title(__('My shifts'));
@@ -120,6 +127,22 @@ new class extends Component
     <div>
         <flux:heading size="xl" level="1">{{ __('My shifts') }}</flux:heading>
         <flux:text class="mt-1">{{ $team->name }}</flux:text>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2" data-test="my-shifts-hours-summary">
+        <flux:card>
+            <flux:text class="text-sm">{{ __('Planned hours') }}</flux:text>
+            <div class="mt-1 text-2xl font-semibold text-zinc-900 dark:text-white" data-test="my-planned-hours">
+                {{ $hoursSummary->plannedFormatted() }}
+            </div>
+        </flux:card>
+
+        <flux:card>
+            <flux:text class="text-sm">{{ __('Worked hours') }}</flux:text>
+            <div class="mt-1 text-2xl font-semibold text-zinc-900 dark:text-white" data-test="my-worked-hours">
+                {{ $hoursSummary->workedFormatted() }}
+            </div>
+        </flux:card>
     </div>
 
     @if ($statusMessage !== null)
@@ -147,7 +170,16 @@ new class extends Component
                     @php
                         $startsLocal = $shift->slot->starts_at->setTimezone($timezone);
                         $endsLocal = $shift->slot->ends_at->setTimezone($timezone);
-                        $hours = rtrim(rtrim(number_format($shift->slot->plannedHours(), 2, '.', ''), '0'), '.');
+                        $plannedDuration = MemberHours::formatDuration($memberHours->plannedMinutesForShift($shift));
+                        $isAdjusted = $shift->status === ShiftStatus::Confirmed
+                            && $shift->attendance_status === AttendanceStatus::Adjusted
+                            && $shift->actual_starts_at !== null
+                            && $shift->actual_ends_at !== null;
+                        $isNoShow = $shift->status === ShiftStatus::Confirmed
+                            && $shift->attendance_status === AttendanceStatus::NoShow;
+                        $actualStartsLocal = $isAdjusted ? $shift->actual_starts_at->setTimezone($timezone) : null;
+                        $actualEndsLocal = $isAdjusted ? $shift->actual_ends_at->setTimezone($timezone) : null;
+                        $workedMinutes = $isAdjusted ? $memberHours->workedMinutesForShift($shift, $now) : null;
                         $badgeColor = match ($shift->status) {
                             ShiftStatus::Confirmed => 'green',
                             ShiftStatus::Pending => 'amber',
@@ -163,14 +195,32 @@ new class extends Component
                                     {{ $startsLocal->translatedFormat('l j. F Y') }}
                                 </div>
                                 <flux:text class="mt-0.5">
-                                    {{ $startsLocal->format('H:i') }}–{{ $endsLocal->format('H:i') }} · {{ __(':hours h', ['hours' => $hours]) }}
+                                    {{ $startsLocal->format('H:i') }}–{{ $endsLocal->format('H:i') }} · {{ $plannedDuration }}
                                 </flux:text>
+                                @if ($isAdjusted && $actualStartsLocal !== null && $actualEndsLocal !== null && $workedMinutes !== null)
+                                    <flux:text class="mt-0.5 text-sm" data-test="shift-actual-{{ $shift->id }}">
+                                        {{ __('Actual') }}: {{ $actualStartsLocal->format('H:i') }}–{{ $actualEndsLocal->format('H:i') }} · {{ MemberHours::formatDuration($workedMinutes) }}
+                                        @if (! $actualStartsLocal->isSameDay($actualEndsLocal))
+                                            ({{ __('Ends next day') }})
+                                        @endif
+                                    </flux:text>
+                                @endif
                             </div>
 
                             <div class="flex flex-wrap items-center gap-2">
                                 <flux:badge size="sm" :color="$badgeColor">
                                     {{ $shift->status->label() }}
                                 </flux:badge>
+
+                                @if ($isAdjusted)
+                                    <flux:badge size="sm" color="blue" data-test="shift-attendance-{{ $shift->id }}">
+                                        {{ __('Adjusted') }}
+                                    </flux:badge>
+                                @elseif ($isNoShow)
+                                    <flux:badge size="sm" color="red" data-test="shift-attendance-{{ $shift->id }}">
+                                        {{ __('No-show') }}
+                                    </flux:badge>
+                                @endif
 
                                 @if ($shift->status === ShiftStatus::Confirmed)
                                     @if ($shift->slot->isBeforeCancellationDeadline($team))
@@ -218,7 +268,16 @@ new class extends Component
                     @php
                         $startsLocal = $shift->slot->starts_at->setTimezone($timezone);
                         $endsLocal = $shift->slot->ends_at->setTimezone($timezone);
-                        $hours = rtrim(rtrim(number_format($shift->slot->plannedHours(), 2, '.', ''), '0'), '.');
+                        $plannedDuration = MemberHours::formatDuration($memberHours->plannedMinutesForShift($shift));
+                        $isAdjusted = $shift->status === ShiftStatus::Confirmed
+                            && $shift->attendance_status === AttendanceStatus::Adjusted
+                            && $shift->actual_starts_at !== null
+                            && $shift->actual_ends_at !== null;
+                        $isNoShow = $shift->status === ShiftStatus::Confirmed
+                            && $shift->attendance_status === AttendanceStatus::NoShow;
+                        $actualStartsLocal = $isAdjusted ? $shift->actual_starts_at->setTimezone($timezone) : null;
+                        $actualEndsLocal = $isAdjusted ? $shift->actual_ends_at->setTimezone($timezone) : null;
+                        $workedMinutes = $isAdjusted ? $memberHours->workedMinutesForShift($shift, $now) : null;
                         $badgeColor = match ($shift->status) {
                             ShiftStatus::Confirmed => 'green',
                             ShiftStatus::Pending => 'amber',
@@ -234,14 +293,32 @@ new class extends Component
                                     {{ $startsLocal->translatedFormat('l j. F Y') }}
                                 </div>
                                 <flux:text class="mt-0.5">
-                                    {{ $startsLocal->format('H:i') }}–{{ $endsLocal->format('H:i') }} · {{ __(':hours h', ['hours' => $hours]) }}
+                                    {{ $startsLocal->format('H:i') }}–{{ $endsLocal->format('H:i') }} · {{ $plannedDuration }}
                                 </flux:text>
+                                @if ($isAdjusted && $actualStartsLocal !== null && $actualEndsLocal !== null && $workedMinutes !== null)
+                                    <flux:text class="mt-0.5 text-sm" data-test="shift-actual-{{ $shift->id }}">
+                                        {{ __('Actual') }}: {{ $actualStartsLocal->format('H:i') }}–{{ $actualEndsLocal->format('H:i') }} · {{ MemberHours::formatDuration($workedMinutes) }}
+                                        @if (! $actualStartsLocal->isSameDay($actualEndsLocal))
+                                            ({{ __('Ends next day') }})
+                                        @endif
+                                    </flux:text>
+                                @endif
                             </div>
 
                             <div class="flex flex-wrap items-center gap-2">
                                 <flux:badge size="sm" :color="$badgeColor">
                                     {{ $shift->status->label() }}
                                 </flux:badge>
+
+                                @if ($isAdjusted)
+                                    <flux:badge size="sm" color="blue" data-test="shift-attendance-{{ $shift->id }}">
+                                        {{ __('Adjusted') }}
+                                    </flux:badge>
+                                @elseif ($isNoShow)
+                                    <flux:badge size="sm" color="red" data-test="shift-attendance-{{ $shift->id }}">
+                                        {{ __('No-show') }}
+                                    </flux:badge>
+                                @endif
 
                                 @if ($shift->status === ShiftStatus::Pending)
                                     <flux:button
