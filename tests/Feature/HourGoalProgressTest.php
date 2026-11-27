@@ -9,8 +9,9 @@ use App\Models\Team;
 use App\Models\TeamSettings;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Livewire\Livewire;
 
-it('shows the same current-season goal progress on Schedule and My shifts', function () {
+it('shows the same current-season goal progress on Schedule, My shifts, and Hours overview', function () {
     $day = CarbonImmutable::parse('2027-08-05', 'Europe/Copenhagen');
     $this->travelTo($day->setTime(21, 0));
 
@@ -19,9 +20,9 @@ it('shows the same current-season goal progress on Schedule and My shifts', func
     $oldSeason = Season::factory()->for($team)->create(['name' => 'Smukfest 2026']);
     $team->update(['current_season_id' => $season->id]);
 
-    $user = User::factory()->create(['locale' => 'en']);
+    $user = User::factory()->create(['name' => 'Volunteer Example', 'locale' => 'en']);
     $membership = Membership::factory()->for($user)->for($team)->create();
-    $admin = User::factory()->create();
+    $admin = User::factory()->create(['locale' => 'en']);
     $otherMembership = Membership::factory()->for($admin)->for($team)->admin()->create();
 
     SeasonHourGoal::factory()->for($oldSeason)->for($membership)->create(['hours' => 40]);
@@ -31,7 +32,7 @@ it('shows the same current-season goal progress on Schedule and My shifts', func
         'starts_at' => $day->setTime(12, 0)->utc(),
         'ends_at' => $day->setTime(16, 0)->utc(),
     ]);
-    Shift::factory()->for($membership)->for($adjustedSlot)->adjusted(
+    $adjustedShift = Shift::factory()->for($membership)->for($adjustedSlot)->adjusted(
         startsAt: $day->setTime(13, 0),
         endsAt: $day->setTime(15, 30),
         recordedBy: $admin,
@@ -41,13 +42,15 @@ it('shows the same current-season goal progress on Schedule and My shifts', func
         'starts_at' => $day->setTime(15, 0)->utc(),
         'ends_at' => $day->setTime(18, 30)->utc(),
     ]);
-    Shift::factory()->for($membership)->for($pendingSlot)->pending()->create();
+    $pendingShift = Shift::factory()->for($membership)->for($pendingSlot)->pending()->create();
 
     $noShowSlot = Slot::factory()->for($season)->create([
         'starts_at' => $day->setTime(19, 0)->utc(),
         'ends_at' => $day->setTime(20, 0)->utc(),
     ]);
     Shift::factory()->for($membership)->for($noShowSlot)->noShow(recordedBy: $admin)->create();
+    Shift::factory()->for($membership)->for($noShowSlot)->rejected()->create();
+    Shift::factory()->for($membership)->for($noShowSlot)->cancelled()->create();
     Shift::factory()->for($otherMembership)->for($noShowSlot)->confirmed()->create();
 
     $upcomingSlot = Slot::factory()->for($season)->create([
@@ -67,6 +70,17 @@ it('shows the same current-season goal progress on Schedule and My shifts', func
     $this->get(route('my-shifts.index'))
         ->assertOk()
         ->assertSeeTextInOrder(['9 h 30 m / 24 h · 3 confirmed, 1 pending', 'Planned hours', '9 h', 'Worked hours', '2 h 30 m']);
+
+    $this->actingAs($admin)
+        ->get(route('hours.index'))
+        ->assertOk()
+        ->assertSeeTextInOrder(['Volunteer Example', 'Planned hours', '9 h', 'Worked hours', '2 h 30 m', '9 h 30 m / 24 h']);
+
+    Livewire::actingAs($admin)
+        ->test('pages::hours.index')
+        ->call('toggleMember', $membership->id)
+        ->assertSeeHtml('data-test="history-shift-'.$adjustedShift->id.'"')
+        ->assertDontSeeHtml('data-test="history-shift-'.$pendingShift->id.'"');
 });
 
 it('shows goal progress or counts alone according to the admin member’s effective goal', function (

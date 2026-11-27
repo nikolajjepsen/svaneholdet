@@ -29,6 +29,8 @@ new class extends Component
 
     public string $search = '';
 
+    public bool $shortOfGoal = false;
+
     public ?int $expandedMembershipId = null;
 
     protected Team $team;
@@ -65,6 +67,7 @@ new class extends Component
         $this->toDate = '';
         $this->status = HoursMembershipFilter::All->value;
         $this->search = '';
+        $this->shortOfGoal = false;
     }
 
     private function currentSeason(): ?Season
@@ -95,13 +98,15 @@ new class extends Component
                 toDate: $this->toDate !== '' ? $this->toDate : null,
                 status: $statusFilter,
                 search: $this->search,
+                shortOfGoal: $this->shortOfGoal,
             )
             : collect();
 
-        $hasActiveFilters = $this->fromDate !== ''
-            || $this->toDate !== ''
+        $hasDateFilter = $this->fromDate !== '' || $this->toDate !== '';
+        $hasActiveFilters = $hasDateFilter
             || $statusFilter !== HoursMembershipFilter::All
-            || trim($this->search) !== '';
+            || trim($this->search) !== ''
+            || $this->shortOfGoal;
 
         return $this->view([
             'team' => $this->team,
@@ -111,6 +116,7 @@ new class extends Component
             'memberHours' => $memberHours,
             'now' => now()->toImmutable(),
             'hasActiveFilters' => $hasActiveFilters,
+            'hasDateFilter' => $hasDateFilter,
         ])->title(__('Hours overview'));
     }
 }; ?>
@@ -163,8 +169,14 @@ new class extends Component
             </flux:field>
         </div>
 
-        @if ($hasActiveFilters)
-            <div class="flex justify-end">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <flux:checkbox
+                wire:model.live="shortOfGoal"
+                :label="__('Short of goal')"
+                data-test="hours-short-of-goal-filter"
+            />
+
+            @if ($hasActiveFilters)
                 <flux:button
                     variant="ghost"
                     size="sm"
@@ -173,7 +185,11 @@ new class extends Component
                 >
                     {{ __('Clear filters') }}
                 </flux:button>
-            </div>
+            @endif
+        </div>
+
+        @if ($hasDateFilter)
+            <flux:text>{{ __('Goal progress and the Short of goal filter cover the full season.') }}</flux:text>
         @endif
     </flux:card>
 
@@ -187,6 +203,7 @@ new class extends Component
                 @php
                     $membership = $row['membership'];
                     $summary = $row['summary'];
+                    $goalHours = $row['goalHours'];
                     $shifts = $row['shifts'];
                     $isExpanded = $expandedMembershipId === $membership->id;
                 @endphp
@@ -250,6 +267,22 @@ new class extends Component
                                     {{ $summary->workedFormatted() }}
                                 </div>
                             </div>
+
+                            @if ($goalHours !== null)
+                                <div class="text-right">
+                                    <div class="text-xs text-zinc-500 dark:text-zinc-400">
+                                        {{ __('Season goal progress') }}
+                                    </div>
+                                    <div class="font-medium text-zinc-900 dark:text-white" data-test="goal-progress-{{ $membership->id }}">
+                                        {{ $row['seasonSummary']->goalProgressFormatted($goalHours) }}
+                                    </div>
+                                    @if ($row['shortOfGoal'])
+                                        <flux:badge size="sm" color="amber" data-test="short-of-goal-{{ $membership->id }}">
+                                            {{ __('Short of goal') }}
+                                        </flux:badge>
+                                    @endif
+                                </div>
+                            @endif
 
                             <flux:button
                                 variant="ghost"

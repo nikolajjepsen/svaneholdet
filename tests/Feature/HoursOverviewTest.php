@@ -3,9 +3,11 @@
 use App\Enums\MembershipStatus;
 use App\Models\Membership;
 use App\Models\Season;
+use App\Models\SeasonHourGoal;
 use App\Models\Shift;
 use App\Models\Slot;
 use App\Models\Team;
+use App\Models\TeamSettings;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Livewire\Livewire;
@@ -285,6 +287,66 @@ it('filters by date range and attributes midnight-spanning shifts in full to the
         ->assertSeeInOrder(['Bob Night', '2 h', '2 h']);
 });
 
+it('filters short of goal using season progress alongside date, search, and membership status filters', function () {
+    [$team, $season] = createHoursTeamWithSeason();
+    $team->update(['settings' => new TeamSettings(defaultHourGoal: 8)]);
+    $admin = User::factory()->create(['name' => 'Alice Admin', 'locale' => 'en']);
+    $adminMembership = Membership::factory()->admin()->for($admin)->for($team)->create();
+
+    $short = Membership::factory()->for(User::factory()->create(['name' => 'Lee Short']))->for($team)->create();
+    $met = Membership::factory()->for(User::factory()->create(['name' => 'Lee Met']))->for($team)->create();
+    $exceeded = Membership::factory()->for(User::factory()->create(['name' => 'Lee Exceeded']))->for($team)->create();
+    $exempt = Membership::factory()->for(User::factory()->create(['name' => 'Lee Exempt']))->for($team)->create();
+    $removed = Membership::factory()->removed()->for(User::factory()->create(['name' => 'Lee Removed']))->for($team)->create();
+
+    SeasonHourGoal::factory()->for($season)->for($met)->create(['hours' => 4]);
+    SeasonHourGoal::factory()->for($season)->for($exceeded)->create(['hours' => 3]);
+    SeasonHourGoal::factory()->for($season)->for($exempt)->create(['hours' => 0]);
+
+    $day = CarbonImmutable::parse('2027-08-05', $team->timezone);
+    $slot = Slot::factory()->for($season)->create([
+        'starts_at' => $day->setTime(12, 0)->utc(),
+        'ends_at' => $day->setTime(16, 0)->utc(),
+    ]);
+
+    foreach ([$short, $met, $exceeded, $exempt, $removed] as $member) {
+        Shift::factory()->for($slot)->for($member)->confirmed()->create();
+    }
+
+    $this->actingAs($admin)->get(route('hours.index'))
+        ->assertOk()
+        ->assertSeeText('4 / 3 h')
+        ->assertSeeText('4 / 4 h')
+        ->assertSeeText('4 / 8 h')
+        ->assertSee('data-test="short-of-goal-'.$short->id.'"', false)
+        ->assertSee('data-test="short-of-goal-'.$adminMembership->id.'"', false)
+        ->assertDontSee('data-test="short-of-goal-'.$met->id.'"', false)
+        ->assertDontSee('data-test="short-of-goal-'.$exceeded->id.'"', false)
+        ->assertDontSee('data-test="short-of-goal-'.$exempt->id.'"', false)
+        ->assertDontSee('data-test="goal-progress-'.$exempt->id.'"', false);
+
+    Livewire::actingAs($admin)->test('pages::hours.index')
+        ->set('shortOfGoal', true)
+        ->set('fromDate', $day->addDay()->toDateString())
+        ->assertSee('Goal progress and the Short of goal filter cover the full season.')
+        ->assertSeeHtmlInOrder(['Lee Short', 'Planned hours', '0 h', 'Worked hours', '0 h', '4 / 8 h'])
+        ->assertSee('Lee Removed')
+        ->assertDontSee('Lee Met')
+        ->assertDontSee('Lee Exceeded')
+        ->assertDontSee('Lee Exempt')
+        ->set('status', 'active')
+        ->assertDontSee('Lee Removed')
+        ->set('search', 'lee')
+        ->assertSee('Lee Short')
+        ->assertDontSee('Alice Admin')
+        ->call('clearFilters')
+        ->assertSee('Lee Met')
+        ->assertSee('Lee Exceeded')
+        ->assertSee('Lee Exempt')
+        ->assertSee('Lee Removed')
+        ->assertDontSee('Goal progress and the Short of goal filter cover the full season.');
+});
+
 it('expands a member to reveal their shift history with planned times, actual times, no-show, duration, and audit metadata', function () {
     $this->travelTo(CarbonImmutable::parse('2027-08-06 12:00', 'Europe/Copenhagen'));
 
@@ -343,7 +405,7 @@ it('expands a member to reveal their shift history with planned times, actual ti
 it('renders hours overview in Danish for Danish admins', function () {
     [$team] = createHoursTeamWithSeason('Barholdet');
     $admin = User::factory()->create(['name' => 'Anders Admin', 'locale' => 'da']);
-    Membership::factory()->admin()->for($admin)->for($team)->create();
+    $membership = Membership::factory()->admin()->for($admin)->for($team)->create();
 
     $this->actingAs($admin)
         ->get(route('hours.index'))
@@ -352,5 +414,8 @@ it('renders hours overview in Danish for Danish admins', function () {
         ->assertSee('Planlagte timer')
         ->assertSee('Arbejdede timer')
         ->assertSee('Medlemsstatus')
-        ->assertSee('Vagthistorik');
+        ->assertSee('Vagthistorik')
+        ->assertSeeText('Mangler timer')
+        ->assertDontSee('data-test="goal-progress-'.$membership->id.'"', false)
+        ->assertDontSee('data-test="short-of-goal-'.$membership->id.'"', false);
 });
