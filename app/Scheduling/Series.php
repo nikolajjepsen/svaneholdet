@@ -97,7 +97,7 @@ class Series
                 }
 
                 if ($capacityChanged) {
-                    $confirmedCount = $slot->confirmedShifts->count();
+                    $confirmedCount = $slot->capacityCountingShifts($slot->confirmedShifts)->count();
 
                     if ($capacity < $slot->capacity && $capacity < $confirmedCount) {
                         $slotLabel = SlotWindow::fromTimestamps($slot->starts_at, $slot->ends_at)

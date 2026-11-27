@@ -2,7 +2,6 @@
 
 namespace App\Scheduling;
 
-use App\Enums\ShiftStatus;
 use App\Models\Season;
 use App\Models\Slot;
 use Carbon\CarbonImmutable;
@@ -51,13 +50,8 @@ class DayOverview
         $slots = $season->slots()
             ->where('starts_at', '<', $dayEndUtc)
             ->where('ends_at', '>', $dayStartUtc)
-            ->withCount([
-                'shifts as confirmed_shifts_count' => fn ($query) => $query->where('status', ShiftStatus::Confirmed),
-                'shifts as pending_shifts_count' => fn ($query) => $query->where('status', ShiftStatus::Pending),
-            ])
-            ->with([
-                'confirmedShifts' => fn ($query) => $query->select(['id', 'slot_id', 'membership_id']),
-            ])
+            ->withCount('pendingShifts')
+            ->withConfirmedShiftMembers()
             ->orderBy('starts_at')
             ->orderBy('ends_at')
             ->orderBy('id')

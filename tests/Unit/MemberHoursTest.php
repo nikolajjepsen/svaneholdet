@@ -136,3 +136,44 @@ it('calculates per-shift worked minutes accurately for shortened, no-show, ended
         ->and($calculator->workedMinutesForShift($ended, $now))->toBe(240)
         ->and($calculator->workedMinutesForShift($future, $now))->toBeNull();
 });
+
+it('counts goal progress once across confirmed, pending, and adjusted intervals', function () {
+    $now = CarbonImmutable::parse('2027-08-05 15:00', 'Europe/Copenhagen');
+    $shifts = [
+        makeMemberHoursShift('2027-08-06 13:00', '2027-08-06 15:00', ShiftStatus::Pending),
+        makeMemberHoursShift('2027-08-06 10:00', '2027-08-06 14:00'),
+        makeMemberHoursShift(
+            '2027-08-06 14:00',
+            '2027-08-06 18:00',
+            ShiftStatus::Confirmed,
+            AttendanceStatus::Adjusted,
+            '2027-08-06 14:30',
+            '2027-08-06 16:45',
+        ),
+        makeMemberHoursShift('2027-08-06 18:00', '2027-08-06 19:00', ShiftStatus::Confirmed, AttendanceStatus::NoShow),
+        makeMemberHoursShift('2027-08-06 19:00', '2027-08-06 20:00', ShiftStatus::Rejected),
+        makeMemberHoursShift('2027-08-06 20:00', '2027-08-06 21:00', ShiftStatus::Cancelled),
+        makeMemberHoursShift('2027-08-05 10:00', '2027-08-05 11:00'),
+    ];
+
+    $summary = (new MemberHours)->summarize($shifts, $now);
+
+    // The goal includes 1h on Aug 5 and the union [10:00, 16:45) on Aug 6.
+    expect($summary->goalProgressMinutes)->toBe(465)
+        ->and($summary->confirmedCount)->toBe(4)
+        ->and($summary->pendingCount)->toBe(1)
+        ->and($summary->plannedMinutes)->toBe(600)
+        ->and($summary->workedMinutes)->toBe(195);
+});
+
+it('counts the overlap between confirmed and pending overnight shifts only once toward the hour goal', function () {
+    $now = CarbonImmutable::parse('2027-08-05 12:00', 'Europe/Copenhagen');
+    $shifts = [
+        makeMemberHoursShift('2027-08-05 21:30', '2027-08-06 01:30'),
+        makeMemberHoursShift('2027-08-05 23:30', '2027-08-06 03:00', ShiftStatus::Pending),
+    ];
+
+    $summary = (new MemberHours)->summarize($shifts, $now);
+
+    expect($summary->goalProgressMinutes)->toBe(330);
+});

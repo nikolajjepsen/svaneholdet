@@ -2,6 +2,7 @@
 
 use App\Auth\CurrentTeam;
 use App\Enums\AttendanceStatus;
+use App\Enums\MembershipRole;
 use App\Models\Membership;
 use App\Models\Shift;
 use App\Models\Slot;
@@ -460,6 +461,7 @@ new class extends Component
             ->unique();
 
         $assignableMemberships = $this->team->activeMemberships()
+            ->when($this->slot->is_admin_only, fn ($query) => $query->where('role', MembershipRole::Admin))
             ->whereNotIn('id', $takenMembershipIds)
             ->with('user')
             ->get()
@@ -477,6 +479,8 @@ new class extends Component
             'isOvernight' => ! $startsLocal->isSameDay($endsLocal),
             'hasStarted' => $this->slot->hasStarted(),
             'confirmedShifts' => $confirmedShifts,
+            'capacityShifts' => $this->slot->capacityCountingShifts($confirmedShifts),
+            'confirmedShiftsByRole' => $confirmedShifts->groupBy(fn (Shift $shift): string => $shift->membership->role->value),
             'pendingShifts' => $pendingShifts,
             'assignableMemberships' => $assignableMemberships,
         ])->title(__('Slot details'));
@@ -528,16 +532,22 @@ new class extends Component
         </div>
 
         @php
-            $confirmedCount = $confirmedShifts->count();
+            $confirmedCount = $capacityShifts->count();
             $pendingCount = $pendingShifts->count();
             $capacityBadgeColor = $confirmedCount > $currentSlot->capacity
                 ? 'amber'
                 : ($confirmedCount === $currentSlot->capacity ? 'zinc' : 'blue');
         @endphp
 
-        <flux:badge size="sm" :color="$capacityBadgeColor" data-test="slot-capacity-badge">
-            {{ $confirmedCount }} / {{ $currentSlot->capacity }}
-        </flux:badge>
+        <div class="flex flex-wrap items-center gap-2">
+            @if ($currentSlot->is_admin_only)
+                <flux:badge size="sm" color="purple">{{ __('Admin-only') }}</flux:badge>
+            @endif
+
+            <flux:badge size="sm" :color="$capacityBadgeColor" data-test="slot-capacity-badge">
+                {{ $confirmedCount }} / {{ $currentSlot->capacity }}
+            </flux:badge>
+        </div>
     </div>
 
     @if ($statusMessage !== null)
@@ -689,126 +699,134 @@ new class extends Component
                 <flux:text>{{ __('No confirmed shifts yet.') }}</flux:text>
             </flux:card>
         @else
-            <div class="space-y-2">
-                @foreach ($confirmedShifts as $index => $shift)
-                    @php
-                        $actualStartsLocal = $shift->actual_starts_at?->setTimezone($team->timezone);
-                        $actualEndsLocal = $shift->actual_ends_at?->setTimezone($team->timezone);
-                        $recordedLocal = $shift->attendance_recorded_at?->setTimezone($team->timezone);
-                    @endphp
-                    <flux:card wire:key="confirmed-shift-{{ $shift->id }}" data-test="confirmed-shift-{{ $shift->id }}" class="space-y-4">
-                        <div class="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                                <div class="font-medium text-zinc-900 dark:text-white">
-                                    {{ $shift->membership->user->name }}
-                                </div>
-                                <flux:text class="text-sm">{{ $shift->membership->user->email }}</flux:text>
-                            </div>
+            @php
+                $overCapacityShiftIds = $capacityShifts->skip($currentSlot->capacity)->pluck('id')->flip();
+            @endphp
+            @foreach ([MembershipRole::Volunteer->value => __('Volunteers'), MembershipRole::Admin->value => __('Admins')] as $role => $heading)
+                @if ($confirmedShiftsByRole->has($role))
+                    <div wire:key="confirmed-role-{{ $role }}" class="space-y-2">
+                        <flux:heading level="3">{{ $heading }}</flux:heading>
+                        @foreach ($confirmedShiftsByRole[$role] as $shift)
+                            @php
+                                $actualStartsLocal = $shift->actual_starts_at?->setTimezone($team->timezone);
+                                $actualEndsLocal = $shift->actual_ends_at?->setTimezone($team->timezone);
+                                $recordedLocal = $shift->attendance_recorded_at?->setTimezone($team->timezone);
+                            @endphp
+                            <flux:card wire:key="confirmed-shift-{{ $shift->id }}" data-test="confirmed-shift-{{ $shift->id }}" class="space-y-4">
+                                <div class="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <div class="font-medium text-zinc-900 dark:text-white">
+                                            {{ $shift->membership->user->name }}
+                                        </div>
+                                        <flux:text class="text-sm">{{ $shift->membership->user->email }}</flux:text>
+                                    </div>
 
-                            <div class="flex flex-wrap items-center gap-2">
-                                @if ($index >= $currentSlot->capacity)
-                                    <flux:badge size="sm" color="amber" data-test="over-capacity-badge-{{ $shift->id }}">
-                                        {{ __('Over capacity') }}
-                                    </flux:badge>
-                                @endif
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        @if ($overCapacityShiftIds->has($shift->id))
+                                            <flux:badge size="sm" color="amber" data-test="over-capacity-badge-{{ $shift->id }}">
+                                                {{ __('Over capacity') }}
+                                            </flux:badge>
+                                        @endif
 
-                                @if ($shift->hasAttendanceOverride())
-                                    <flux:badge size="sm" :color="$shift->attendance_status->badgeColor()" data-test="attendance-status-{{ $shift->id }}">
-                                        {{ $shift->attendance_status->label() }}@if ($shift->attendance_status === AttendanceStatus::Adjusted && $actualStartsLocal !== null && $actualEndsLocal !== null) · {{ $actualStartsLocal->format('H:i') }}–{{ $actualEndsLocal->format('H:i') }}@endif
-                                    </flux:badge>
-                                @endif
+                                        @if ($shift->hasAttendanceOverride())
+                                            <flux:badge size="sm" :color="$shift->attendance_status->badgeColor()" data-test="attendance-status-{{ $shift->id }}">
+                                                {{ $shift->attendance_status->label() }}@if ($shift->attendance_status === AttendanceStatus::Adjusted && $actualStartsLocal !== null && $actualEndsLocal !== null) · {{ $actualStartsLocal->format('H:i') }}–{{ $actualEndsLocal->format('H:i') }}@endif
+                                            </flux:badge>
+                                        @endif
 
-                                <flux:badge size="sm" color="green">
-                                    {{ __('Confirmed') }}
-                                </flux:badge>
+                                        <flux:badge size="sm" color="green">
+                                            {{ __('Confirmed') }}
+                                        </flux:badge>
 
-                                <flux:button
-                                    variant="danger"
-                                    size="sm"
-                                    wire:click="cancelShift({{ $shift->id }})"
-                                    data-test="cancel-shift-{{ $shift->id }}"
-                                >
-                                    {{ __('Cancel shift') }}
-                                </flux:button>
-                            </div>
-                        </div>
-
-                        <div class="border-t border-zinc-200 pt-3 dark:border-zinc-700 space-y-2">
-                            <form
-                                wire:submit="saveAttendance({{ $shift->id }})"
-                                class="flex flex-wrap items-end gap-3"
-                            >
-                                <flux:field class="w-32">
-                                    <flux:label>{{ __('Actual start') }}</flux:label>
-                                    <flux:input
-                                        type="time"
-                                        name="attendanceStartTime{{ $shift->id }}"
-                                        wire:model="attendanceTimes.{{ $shift->id }}.startTime"
-                                        data-test="attendance-start-{{ $shift->id }}"
-                                        required
-                                    />
-                                    <flux:error name="attendanceTimes.{{ $shift->id }}.startTime" />
-                                </flux:field>
-
-                                <flux:field class="w-32">
-                                    <flux:label>{{ __('Actual end') }}</flux:label>
-                                    <flux:input
-                                        type="time"
-                                        name="attendanceEndTime{{ $shift->id }}"
-                                        wire:model="attendanceTimes.{{ $shift->id }}.endTime"
-                                        data-test="attendance-end-{{ $shift->id }}"
-                                        required
-                                    />
-                                    <flux:error name="attendanceTimes.{{ $shift->id }}.endTime" />
-                                </flux:field>
-
-                                <div class="flex flex-wrap items-center gap-2 pb-0.5">
-                                    <flux:button
-                                        type="submit"
-                                        variant="primary"
-                                        size="sm"
-                                        data-test="attendance-save-{{ $shift->id }}"
-                                    >
-                                        {{ __('Save') }}
-                                    </flux:button>
-
-                                    <flux:button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        wire:click="markNoShow({{ $shift->id }})"
-                                        data-test="attendance-no-show-{{ $shift->id }}"
-                                    >
-                                        {{ __('No-show') }}
-                                    </flux:button>
-
-                                    @if ($shift->hasAttendanceOverride())
                                         <flux:button
-                                            type="button"
-                                            variant="ghost"
+                                            variant="danger"
                                             size="sm"
-                                            wire:click="resetAttendance({{ $shift->id }})"
-                                            data-test="attendance-reset-{{ $shift->id }}"
+                                            wire:click="cancelShift({{ $shift->id }})"
+                                            data-test="cancel-shift-{{ $shift->id }}"
                                         >
-                                            {{ __('Reset to planned') }}
+                                            {{ __('Cancel shift') }}
                                         </flux:button>
+                                    </div>
+                                </div>
+
+                                <div class="border-t border-zinc-200 pt-3 dark:border-zinc-700 space-y-2">
+                                    <form
+                                        wire:submit="saveAttendance({{ $shift->id }})"
+                                        class="flex flex-wrap items-end gap-3"
+                                    >
+                                        <flux:field class="w-32">
+                                            <flux:label>{{ __('Actual start') }}</flux:label>
+                                            <flux:input
+                                                type="time"
+                                                name="attendanceStartTime{{ $shift->id }}"
+                                                wire:model="attendanceTimes.{{ $shift->id }}.startTime"
+                                                data-test="attendance-start-{{ $shift->id }}"
+                                                required
+                                            />
+                                            <flux:error name="attendanceTimes.{{ $shift->id }}.startTime" />
+                                        </flux:field>
+
+                                        <flux:field class="w-32">
+                                            <flux:label>{{ __('Actual end') }}</flux:label>
+                                            <flux:input
+                                                type="time"
+                                                name="attendanceEndTime{{ $shift->id }}"
+                                                wire:model="attendanceTimes.{{ $shift->id }}.endTime"
+                                                data-test="attendance-end-{{ $shift->id }}"
+                                                required
+                                            />
+                                            <flux:error name="attendanceTimes.{{ $shift->id }}.endTime" />
+                                        </flux:field>
+
+                                        <div class="flex flex-wrap items-center gap-2 pb-0.5">
+                                            <flux:button
+                                                type="submit"
+                                                variant="primary"
+                                                size="sm"
+                                                data-test="attendance-save-{{ $shift->id }}"
+                                            >
+                                                {{ __('Save') }}
+                                            </flux:button>
+
+                                            <flux:button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                wire:click="markNoShow({{ $shift->id }})"
+                                                data-test="attendance-no-show-{{ $shift->id }}"
+                                            >
+                                                {{ __('No-show') }}
+                                            </flux:button>
+
+                                            @if ($shift->hasAttendanceOverride())
+                                                <flux:button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    wire:click="resetAttendance({{ $shift->id }})"
+                                                    data-test="attendance-reset-{{ $shift->id }}"
+                                                >
+                                                    {{ __('Reset to planned') }}
+                                                </flux:button>
+                                            @endif
+                                        </div>
+                                    </form>
+
+                                    @if ($shift->hasAttendanceOverride() && $recordedLocal !== null)
+                                        <flux:text class="text-xs" data-test="attendance-audit-{{ $shift->id }}">
+                                            @if ($shift->attendanceRecordedBy !== null)
+                                                {{ __('Edited by :name on :time', ['name' => $shift->attendanceRecordedBy->name, 'time' => $recordedLocal->translatedFormat('j. M Y H:i')]) }}
+                                            @else
+                                                {{ __('Edited on :time', ['time' => $recordedLocal->translatedFormat('j. M Y H:i')]) }}
+                                            @endif
+                                        </flux:text>
                                     @endif
                                 </div>
-                            </form>
-
-                            @if ($shift->hasAttendanceOverride() && $recordedLocal !== null)
-                                <flux:text class="text-xs" data-test="attendance-audit-{{ $shift->id }}">
-                                    @if ($shift->attendanceRecordedBy !== null)
-                                        {{ __('Edited by :name on :time', ['name' => $shift->attendanceRecordedBy->name, 'time' => $recordedLocal->translatedFormat('j. M Y H:i')]) }}
-                                    @else
-                                        {{ __('Edited on :time', ['time' => $recordedLocal->translatedFormat('j. M Y H:i')]) }}
-                                    @endif
-                                </flux:text>
-                            @endif
-                        </div>
-                    </flux:card>
-                @endforeach
-            </div>
+                            </flux:card>
+                        @endforeach
+                    </div>
+                @endif
+            @endforeach
         @endif
     </div>
 
@@ -843,7 +861,7 @@ new class extends Component
             <flux:heading size="lg">{{ __('Delete slot') }}</flux:heading>
 
             <flux:text>
-                {{ __('This slot has :confirmed confirmed and :pending pending shifts. Deleting it removes all shifts on this slot.', ['confirmed' => $confirmedCount, 'pending' => $pendingCount]) }}
+                {{ __('This slot has :confirmed confirmed and :pending pending shifts. Deleting it removes all shifts on this slot.', ['confirmed' => $confirmedShifts->count(), 'pending' => $pendingCount]) }}
             </flux:text>
 
             <flux:checkbox

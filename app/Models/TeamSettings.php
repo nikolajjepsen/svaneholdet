@@ -20,6 +20,7 @@ final readonly class TeamSettings implements Castable, JsonSerializable
         public int $cancellationDeadlineHours = self::DEFAULT_CANCELLATION_DEADLINE_HOURS,
         public bool $shiftsRequireConfirmation = self::DEFAULT_SHIFTS_REQUIRE_CONFIRMATION,
         public bool $showConfirmedVolunteerNames = self::DEFAULT_SHOW_CONFIRMED_VOLUNTEER_NAMES,
+        public ?int $defaultHourGoal = null,
     ) {}
 
     /**
@@ -46,6 +47,9 @@ final readonly class TeamSettings implements Castable, JsonSerializable
             cancellationDeadlineHours: $cancellationDeadlineHours,
             shiftsRequireConfirmation: $shiftsRequireConfirmation,
             showConfirmedVolunteerNames: $showConfirmedVolunteerNames,
+            defaultHourGoal: is_int($data['default_hour_goal'] ?? null) && $data['default_hour_goal'] > 0
+                ? $data['default_hour_goal']
+                : null,
         );
     }
 
@@ -54,6 +58,7 @@ final readonly class TeamSettings implements Castable, JsonSerializable
      *     cancellation_deadline_hours: int,
      *     shifts_require_confirmation: bool,
      *     show_confirmed_volunteer_names: bool,
+     *     default_hour_goal: int|null,
      * }
      */
     public function toArray(): array
@@ -62,6 +67,7 @@ final readonly class TeamSettings implements Castable, JsonSerializable
             'cancellation_deadline_hours' => $this->cancellationDeadlineHours,
             'shifts_require_confirmation' => $this->shiftsRequireConfirmation,
             'show_confirmed_volunteer_names' => $this->showConfirmedVolunteerNames,
+            'default_hour_goal' => $this->defaultHourGoal,
         ];
     }
 
@@ -70,6 +76,7 @@ final readonly class TeamSettings implements Castable, JsonSerializable
      *     cancellation_deadline_hours: int,
      *     shifts_require_confirmation: bool,
      *     show_confirmed_volunteer_names: bool,
+     *     default_hour_goal: int|null,
      * }
      */
     public function jsonSerialize(): array

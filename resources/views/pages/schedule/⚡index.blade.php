@@ -7,6 +7,8 @@ use App\Models\Shift;
 use App\Models\Slot;
 use App\Models\Team;
 use App\Models\User;
+use App\Scheduling\HourGoals;
+use App\Scheduling\MemberHours;
 use App\Scheduling\Shifts;
 use App\Scheduling\Slots;
 use Illuminate\Support\Facades\Auth;
@@ -41,6 +43,8 @@ new class extends Component
     public string $endTime = '16:00';
 
     public int $capacity = 4;
+
+    public bool $isAdminOnly = false;
 
     protected Team $team;
 
@@ -79,6 +83,7 @@ new class extends Component
             'startTime' => ['required', 'date_format:H:i'],
             'endTime' => ['required', 'date_format:H:i', 'different:startTime'],
             'capacity' => ['required', 'integer', 'min:1'],
+            'isAdminOnly' => ['required', 'boolean'],
         ]);
 
         $slots->createSingle(
@@ -88,8 +93,10 @@ new class extends Component
             startTime: $validated['startTime'],
             endTime: $validated['endTime'],
             capacity: (int) $validated['capacity'],
+            isAdminOnly: (bool) $validated['isAdminOnly'],
         );
 
+        $this->reset('isAdminOnly');
         $this->showCreateSlotModal = false;
         $this->statusMessage = __('Slot created.');
     }
@@ -190,7 +197,7 @@ new class extends Component
         return $user;
     }
 
-    public function render(): View
+    public function render(MemberHours $memberHours): View
     {
         $season = $this->currentSeason();
         $user = $this->user();
@@ -202,11 +209,23 @@ new class extends Component
             ->whereBelongsTo($this->team)
             ->first();
 
+        $memberShifts = $season !== null && $membership !== null
+            ? $membership->shifts()
+                ->whereRelation('slot', 'season_id', $season->id)
+                ->whereIn('status', [ShiftStatus::Confirmed, ShiftStatus::Pending])
+                ->with('slot')
+                ->get()
+            : collect();
+
+        $goalHours = $season !== null && $membership !== null
+            ? HourGoals::effectiveForMember($this->team->settings, $season, $membership)
+            : null;
+
         $days = collect();
 
         if ($season !== null) {
             $slots = $season->slots()
-                ->withCount(['shifts as confirmed_shifts_count' => fn ($query) => $query->where('status', ShiftStatus::Confirmed)])
+                ->when(! $isAdmin, fn ($query) => $query->where('is_admin_only', false))
                 ->when($isAdmin, fn ($query) => $query->withCount([
                     'shifts as pending_shifts_count' => fn ($shiftsQuery) => $shiftsQuery->where('status', ShiftStatus::Pending),
                 ]))
@@ -214,12 +233,7 @@ new class extends Component
                     ->where('membership_id', $membership?->id)
                     ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value]),
                 ])
-                ->when($showConfirmedVolunteerNames, fn ($query) => $query->with([
-                    'confirmedShifts' => fn ($shiftsQuery) => $shiftsQuery
-                        ->orderBy('confirmed_at')
-                        ->orderBy('id')
-                        ->with('membership.user'),
-                ]))
+                ->withConfirmedShiftMembers()
                 ->orderBy('starts_at')
                 ->orderBy('ends_at')
                 ->orderBy('id')
@@ -246,10 +260,12 @@ new class extends Component
         return $this->view([
             'team' => $this->team,
             'season' => $season,
+            'hoursSummary' => $memberHours->summarize($memberShifts),
+            'goalHours' => $goalHours,
             'isAdmin' => $isAdmin,
             'timezone' => $timezone,
             'showConfirmedVolunteerNames' => $showConfirmedVolunteerNames,
-            'shiftsRequireConfirmation' => $this->team->settings->shiftsRequireConfirmation,
+            'shiftsRequireConfirmation' => ! $isAdmin && $this->team->settings->shiftsRequireConfirmation,
             'days' => $days,
         ])->title(__('Schedule'));
     }
@@ -290,6 +306,8 @@ new class extends Component
         @endif
     </div>
 
+    <x-hour-goal-progress :summary="$hoursSummary" :goal-hours="$goalHours" />
+
     @if ($statusMessage !== null)
         <flux:callout icon="check-circle" color="green" role="status">
             <flux:callout.text>{{ $statusMessage }}</flux:callout.text>
@@ -326,7 +344,8 @@ new class extends Component
                                     $startsLocal = $slot->starts_at->setTimezone($timezone);
                                     $endsLocal = $slot->ends_at->setTimezone($timezone);
                                     $isOvernight = ! $startsLocal->isSameDay($endsLocal);
-                                    $confirmedCount = (int) $slot->confirmed_shifts_count;
+                                    $capacityShifts = $slot->capacityCountingShifts($slot->confirmedShifts);
+                                    $confirmedCount = $capacityShifts->count();
                                     $pendingCount = $isAdmin ? (int) $slot->pending_shifts_count : 0;
                                     $displayedCount = $isAdmin ? $confirmedCount : min($confirmedCount, $slot->capacity);
                                     $memberShift = $slot->shifts->first();
@@ -344,7 +363,11 @@ new class extends Component
                                             @endif
                                         </div>
 
-                                        <div class="flex items-center gap-2">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            @if ($slot->is_admin_only)
+                                                <flux:badge size="sm" color="purple">{{ __('Admin-only') }}</flux:badge>
+                                            @endif
+
                                             @if ($isAdmin && $pendingCount > 0)
                                                 <flux:badge size="sm" color="amber" data-test="pending-count-slot-{{ $slot->id }}">
                                                     {{ __(':count pending', ['count' => $pendingCount]) }}
@@ -357,16 +380,18 @@ new class extends Component
                                         </div>
                                     </div>
 
-                                    @if ($showConfirmedVolunteerNames && $slot->confirmedShifts->isNotEmpty())
+                                    @if (! $slot->is_admin_only && $showConfirmedVolunteerNames && $capacityShifts->isNotEmpty())
                                         @php
                                             $displayedConfirmedShifts = $isAdmin
-                                                ? $slot->confirmedShifts
-                                                : $slot->confirmedShifts->take($slot->capacity);
+                                                ? $capacityShifts
+                                                : $capacityShifts->take($slot->capacity);
                                         @endphp
                                         <flux:text class="text-sm" data-test="confirmed-names-slot-{{ $slot->id }}">
                                             {{ $displayedConfirmedShifts->map(fn ($shift): string => $shift->membership->user->firstName())->join(', ') }}
                                         </flux:text>
                                     @endif
+
+                                    <x-confirmed-admins :shifts="$slot->confirmedShifts" />
 
                                     <div class="flex flex-wrap items-center justify-end gap-2">
                                         @if ($isAdmin)
@@ -425,7 +450,7 @@ new class extends Component
                                             >
                                                 {{ __('Withdraw') }}
                                             </flux:button>
-                                        @elseif ($isFull && ! $shiftsRequireConfirmation)
+                                        @elseif ($isFull && ! $isAdmin && ! $shiftsRequireConfirmation)
                                             <flux:badge size="sm" color="zinc" data-test="full-slot-{{ $slot->id }}">
                                                 {{ __('Full') }}
                                             </flux:badge>
@@ -483,6 +508,8 @@ new class extends Component
                         <flux:input type="number" name="capacity" min="1" wire:model="capacity" required />
                         <flux:error name="capacity" />
                     </flux:field>
+
+                    <flux:checkbox wire:model="isAdminOnly" :label="__('Admin-only')" data-test="create-slot-admin-only" />
 
                     <div class="flex justify-end gap-2">
                         <flux:button type="button" variant="ghost" wire:click="$set('showCreateSlotModal', false)">

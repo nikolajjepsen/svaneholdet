@@ -25,6 +25,9 @@ class HoursOverview
      * @return Collection<int, array{
      *     membership: Membership,
      *     summary: HoursSummary,
+     *     seasonSummary: HoursSummary,
+     *     goalHours: ?int,
+     *     shortOfGoal: bool,
      *     shifts: Collection<int, Shift>
      * }>
      */
@@ -36,6 +39,7 @@ class HoursOverview
         HoursMembershipFilter $status = HoursMembershipFilter::All,
         string $search = '',
         ?CarbonImmutable $now = null,
+        bool $shortOfGoal = false,
     ): Collection {
         $referenceNow = $now ?? now()->toImmutable();
         $timezone = $team->timezone;
@@ -87,20 +91,12 @@ class HoursOverview
             return collect();
         }
 
+        $goalOverrides = $season->hourGoals()->whereIn('membership_id', $memberships->pluck('id'))->get()->keyBy('membership_id');
+
         $shiftsByMembership = Shift::query()
             ->whereIn('membership_id', $memberships->pluck('id'))
-            ->where('status', ShiftStatus::Confirmed)
-            ->whereHas('slot', function (Builder $query) use ($season, $fromUtc, $toExclusiveUtc): void {
-                $query->where('season_id', $season->id);
-
-                if ($fromUtc !== null) {
-                    $query->where('starts_at', '>=', $fromUtc);
-                }
-
-                if ($toExclusiveUtc !== null) {
-                    $query->where('starts_at', '<', $toExclusiveUtc);
-                }
-            })
+            ->whereIn('status', [ShiftStatus::Confirmed, ShiftStatus::Pending])
+            ->whereHas('slot', fn (Builder $query) => $query->where('season_id', $season->id))
             ->with(['slot', 'attendanceRecordedBy'])
             ->get()
             ->sortBy([
@@ -110,15 +106,27 @@ class HoursOverview
             ])
             ->groupBy('membership_id');
 
-        return $memberships->map(function (Membership $membership) use ($shiftsByMembership, $referenceNow): array {
-            /** @var Collection<int, Shift> $memberShifts */
-            $memberShifts = ($shiftsByMembership->get($membership->id) ?? collect())->values();
+        $settings = $team->settings;
+        $hasDateFilter = $fromUtc !== null || $toExclusiveUtc !== null;
+
+        return $memberships->map(function (Membership $membership) use ($shiftsByMembership, $goalOverrides, $settings, $referenceNow, $hasDateFilter, $fromUtc, $toExclusiveUtc): array {
+            /** @var Collection<int, Shift> $seasonShifts */
+            $seasonShifts = $shiftsByMembership->get($membership->id) ?? collect();
+            $seasonSummary = $this->memberHours->summarize($seasonShifts, $referenceNow);
+            $goalHours = HourGoals::effective($settings, $goalOverrides->get($membership->id));
+            $memberShifts = $seasonShifts->filter(fn (Shift $shift): bool => $shift->status === ShiftStatus::Confirmed
+                && ($fromUtc === null || $shift->slot->starts_at->greaterThanOrEqualTo($fromUtc))
+                && ($toExclusiveUtc === null || $shift->slot->starts_at->lessThan($toExclusiveUtc)))
+                ->values();
 
             return [
                 'membership' => $membership,
-                'summary' => $this->memberHours->summarize($memberShifts, $referenceNow),
+                'summary' => $hasDateFilter ? $this->memberHours->summarize($memberShifts, $referenceNow) : $seasonSummary,
+                'seasonSummary' => $seasonSummary,
+                'goalHours' => $goalHours,
+                'shortOfGoal' => $goalHours !== null && $seasonSummary->goalProgressMinutes < $goalHours * 60,
                 'shifts' => $memberShifts,
             ];
-        });
+        })->filter(fn (array $row): bool => ! $shortOfGoal || $row['shortOfGoal'])->values();
     }
 }

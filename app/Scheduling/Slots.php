@@ -29,6 +29,7 @@ class Slots
         string $startTime,
         string $endTime,
         int $capacity,
+        bool $isAdminOnly = false,
     ): Slot {
         Gate::forUser($actor)->authorize('create', [Slot::class, $season]);
 
@@ -46,6 +47,7 @@ class Slots
             'starts_at' => $window->startsAt,
             'ends_at' => $window->endsAt,
             'capacity' => $capacity,
+            'is_admin_only' => $isAdminOnly,
         ]);
     }
 
@@ -69,10 +71,7 @@ class Slots
                 ]);
             }
 
-            $confirmedCount = Shift::query()
-                ->where('slot_id', $lockedSlot->id)
-                ->where('status', ShiftStatus::Confirmed)
-                ->count();
+            $confirmedCount = $lockedSlot->confirmedCapacityCount();
 
             if ($capacity < $lockedSlot->capacity && $capacity < $confirmedCount && ! $acceptWarnings) {
                 return new SlotActionResult(warnings: [

@@ -7,6 +7,7 @@ use App\Mail\InvitationMail;
 use App\Models\Invitation;
 use App\Models\Membership;
 use App\Models\Season;
+use App\Models\SeasonHourGoal;
 use App\Models\Shift;
 use App\Models\Slot;
 use App\Models\Team;
@@ -618,4 +619,125 @@ it('does not cancel a removed member\'s upcoming shifts on another team', functi
 
     expect($teamShift->fresh()->status)->toBe(ShiftStatus::Cancelled)
         ->and($otherShift->fresh()->status)->toBe(ShiftStatus::Confirmed);
+});
+
+it('sets, exempts, and clears an hour goal for a member in the current season', function () {
+    $season = Season::factory()->for($this->team)->create();
+    $this->team->update([
+        'current_season_id' => $season->id,
+        'settings' => ['default_hour_goal' => 24],
+    ]);
+    $member = Membership::factory()->for($this->team)->create();
+
+    $members = Livewire::actingAs($this->admin)
+        ->test('pages::members.index')
+        ->assertSee('24 h (team default)')
+        ->call('editHourGoal', $member->id)
+        ->set('hourGoal', '16')
+        ->call('saveHourGoal')
+        ->assertHasNoErrors()
+        ->assertSee('16 h (custom)');
+
+    $this->assertDatabaseHas('season_hour_goals', [
+        'season_id' => $season->id,
+        'membership_id' => $member->id,
+        'hours' => 16,
+    ]);
+
+    $members
+        ->call('editHourGoal', $member->id)
+        ->assertSet('hourGoal', '16')
+        ->set('hourGoal', '0')
+        ->call('saveHourGoal')
+        ->assertHasNoErrors()
+        ->assertSee('Exempt');
+
+    $this->assertDatabaseHas('season_hour_goals', [
+        'season_id' => $season->id,
+        'membership_id' => $member->id,
+        'hours' => 0,
+    ]);
+    $this->assertDatabaseCount('season_hour_goals', 1);
+
+    $members
+        ->call('editHourGoal', $member->id)
+        ->assertSet('hourGoal', '0')
+        ->set('hourGoal', '')
+        ->call('saveHourGoal')
+        ->assertHasNoErrors()
+        ->assertDontSee('Exempt');
+
+    $this->assertDatabaseMissing('season_hour_goals', [
+        'season_id' => $season->id,
+        'membership_id' => $member->id,
+    ]);
+});
+
+it('keeps an admin’s override in its season and refuses a stale edit after the season changes', function () {
+    $previousSeason = Season::factory()->for($this->team)->create(['name' => 'Smukfest 2027']);
+    $nextSeason = Season::factory()->for($this->team)->create(['name' => 'Smukfest 2028']);
+    $this->team->update(['current_season_id' => $previousSeason->id]);
+    SeasonHourGoal::factory()->for($previousSeason, 'season')->for($this->adminMembership)->create(['hours' => 14]);
+
+    $previousPage = Livewire::actingAs($this->admin)
+        ->test('pages::members.index')
+        ->assertSee('14 h (custom)')
+        ->call('editHourGoal', $this->adminMembership->id);
+
+    $this->team->update(['current_season_id' => $nextSeason->id]);
+
+    $previousPage->call('saveHourGoal')->assertForbidden();
+
+    Livewire::test('pages::members.index')
+        ->assertSee('No hour goal')
+        ->assertDontSee('14 h (custom)')
+        ->call('editHourGoal', $this->adminMembership->id)
+        ->assertSet('hourGoal', '')
+        ->set('hourGoal', '18')
+        ->call('saveHourGoal')
+        ->assertHasNoErrors()
+        ->assertSee('18 h (custom)');
+
+    $this->assertDatabaseHas('season_hour_goals', [
+        'season_id' => $previousSeason->id,
+        'membership_id' => $this->adminMembership->id,
+        'hours' => 14,
+    ]);
+    $this->assertDatabaseHas('season_hour_goals', [
+        'season_id' => $nextSeason->id,
+        'membership_id' => $this->adminMembership->id,
+        'hours' => 18,
+    ]);
+});
+
+it('rejects invalid member hour goal overrides', function (string $hours) {
+    $season = Season::factory()->for($this->team)->create();
+    $this->team->update(['current_season_id' => $season->id]);
+
+    Livewire::actingAs($this->admin)
+        ->test('pages::members.index')
+        ->call('editHourGoal', $this->adminMembership->id)
+        ->set('hourGoal', $hours)
+        ->call('saveHourGoal')
+        ->assertHasErrors(['hourGoal'])
+        ->assertSee('Enter a whole number of hours, 0 or more.');
+
+    $this->assertDatabaseEmpty('season_hour_goals');
+})->with([
+    'negative' => '-2',
+    'fractional' => '2.5',
+    'non-numeric' => 'abc',
+]);
+
+it('refuses to edit an hour goal for another team’s member even when administering both teams', function () {
+    $season = Season::factory()->for($this->team)->create();
+    $this->team->update(['current_season_id' => $season->id]);
+    $this->otherMembership->update(['role' => MembershipRole::Admin]);
+
+    Livewire::actingAs($this->admin)
+        ->test('pages::members.index')
+        ->call('editHourGoal', $this->otherMembership->id)
+        ->assertForbidden();
+
+    $this->assertDatabaseEmpty('season_hour_goals');
 });

@@ -173,7 +173,7 @@ new class extends Component
                     $endsLocal = $slot->ends_at->setTimezone($timezone);
                     $isOvernight = ! $startsLocal->isSameDay($endsLocal->subSecond());
                     $startedPreviousDay = $startsLocal->format('Y-m-d') !== $dateKey;
-                    $confirmedCount = (int) $slot->confirmed_shifts_count;
+                    $confirmedCount = $slot->capacityCountingShifts($slot->confirmedShifts)->count();
                     $pendingCount = (int) $slot->pending_shifts_count;
                     $isFull = $confirmedCount >= $slot->capacity;
                 @endphp
@@ -184,11 +184,17 @@ new class extends Component
                             {{ $startsLocal->format('H:i') }}–{{ $endsLocal->format('H:i') }}
                         </div>
 
+                        @if ($slot->is_admin_only)
+                            <flux:badge size="sm" color="purple">{{ __('Admin-only') }}</flux:badge>
+                        @endif
+
                         @if ($startedPreviousDay)
                             <flux:text class="text-xs">{{ __('Started previous day') }}</flux:text>
                         @elseif ($isOvernight)
                             <flux:text class="text-xs">{{ __('Ends next day') }}</flux:text>
                         @endif
+
+                        <x-confirmed-admins :shifts="$slot->confirmedShifts" class="mt-2" />
                     </div>
 
                     <div class="flex flex-wrap items-center gap-2">

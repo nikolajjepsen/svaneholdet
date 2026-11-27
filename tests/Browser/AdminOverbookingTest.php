@@ -6,6 +6,7 @@ use App\Models\Season;
 use App\Models\Shift;
 use App\Models\Slot;
 use App\Models\Team;
+use App\Models\TeamSettings;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 
@@ -61,4 +62,50 @@ it('lets an admin assign past capacity after accepting the over-capacity warning
 
     expect($shift->status)->toBe(ShiftStatus::Confirmed);
     expect($shift->confirmed_at)->not->toBeNull();
+});
+
+it('lets an admin sign up and assign a second admin on a full regular slot', function () {
+    $team = Team::factory()->create([
+        'timezone' => 'Europe/Copenhagen',
+        'settings' => new TeamSettings(shiftsRequireConfirmation: true, showConfirmedVolunteerNames: false),
+    ]);
+    $season = Season::factory()->for($team)->create();
+    $team->update(['current_season_id' => $season->id]);
+
+    $slot = Slot::factory()->for($season)->create(['capacity' => 1]);
+    $admin = Membership::factory()->admin()->for(User::factory()->create(['name' => 'Alice Andersen', 'locale' => 'en']))
+        ->for($team)->create();
+    $secondAdmin = Membership::factory()->admin()->for(User::factory()->create(['name' => 'Clara Christiansen']))
+        ->for($team)->create();
+    $volunteer = Membership::factory()->for(User::factory()->create(['name' => 'Bob Beck']))
+        ->for($team)->create();
+    Shift::factory()->confirmed()->for($slot)->for($volunteer)->create();
+
+    $this->actingAs($admin->user);
+
+    visit('/schedule')
+        ->assertSee('1 / 1')
+        ->click("@sign-up-slot-{$slot->id}")
+        ->assertSee('You are signed up for this slot.')
+        ->assertSee('Signed up')
+        ->assertSee('Admins')
+        ->assertSeeIn("@slot-card-{$slot->id}", 'Alice')
+        ->assertDontSeeIn("@slot-card-{$slot->id}", 'Bob')
+        ->click("@open-slot-{$slot->id}")
+        ->assertPathIs("/schedule/slots/{$slot->id}")
+        ->assertSee('Volunteers')
+        ->assertSee('Bob Beck')
+        ->assertSee('Admins')
+        ->assertSee('Alice Andersen')
+        ->select('assignMembershipId', (string) $secondAdmin->id)
+        ->click('@assign-member-submit')
+        ->assertSee('Member assigned to slot.')
+        ->assertSee('Clara Christiansen')
+        ->assertSee('1 / 1')
+        ->assertDontSee('Over capacity')
+        ->navigate('/day-overview')
+        ->assertSeeIn("@day-slot-{$slot->id}", 'Alice, Clara')
+        ->assertSeeIn("@day-slot-{$slot->id}", '1 / 1')
+        ->assertSeeIn('@unique-confirmed-members-count', '3')
+        ->assertNoSmoke();
 });

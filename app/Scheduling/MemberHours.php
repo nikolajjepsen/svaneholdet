@@ -10,7 +10,7 @@ use Carbon\CarbonImmutable;
 class MemberHours
 {
     /**
-     * Summarize planned and worked hours for a collection of shifts, deduplicating
+     * Summarize planned hours, worked hours, and goal progress for shifts, deduplicating
      * overlapping half-open [start, end) intervals before summing durations.
      *
      * @param  iterable<int, Shift>  $shifts
@@ -25,8 +25,14 @@ class MemberHours
         /** @var list<array{0: int, 1: int}> $workedIntervals */
         $workedIntervals = [];
 
+        /** @var list<array{0: int, 1: int}> $goalIntervals */
+        $goalIntervals = [];
+
+        $confirmedCount = 0;
+        $pendingCount = 0;
+
         foreach ($shifts as $shift) {
-            if ($shift->status !== ShiftStatus::Confirmed) {
+            if (! in_array($shift->status, [ShiftStatus::Confirmed, ShiftStatus::Pending], true)) {
                 continue;
             }
 
@@ -34,8 +40,22 @@ class MemberHours
             $plannedStart = $slot->starts_at->getTimestamp();
             $plannedEnd = $slot->ends_at->getTimestamp();
 
+            $plannedInterval = [$plannedStart, $plannedEnd];
+
+            if ($shift->status === ShiftStatus::Pending) {
+                $pendingCount++;
+
+                if ($plannedEnd > $plannedStart) {
+                    $goalIntervals[] = $plannedInterval;
+                }
+
+                continue;
+            }
+
+            $confirmedCount++;
+
             if ($plannedEnd > $plannedStart) {
-                $plannedIntervals[] = [$plannedStart, $plannedEnd];
+                $plannedIntervals[] = $plannedInterval;
             }
 
             $workedInterval = $this->workedIntervalForShift($shift, $referenceNow);
@@ -43,11 +63,20 @@ class MemberHours
             if ($workedInterval !== null && $workedInterval[1] > $workedInterval[0]) {
                 $workedIntervals[] = $workedInterval;
             }
+
+            $goalInterval = $workedInterval ?? $plannedInterval;
+
+            if ($goalInterval[1] > $goalInterval[0]) {
+                $goalIntervals[] = $goalInterval;
+            }
         }
 
         return new HoursSummary(
             plannedMinutes: $this->mergeAndSumMinutes($plannedIntervals),
             workedMinutes: $this->mergeAndSumMinutes($workedIntervals),
+            goalProgressMinutes: $this->mergeAndSumMinutes($goalIntervals),
+            confirmedCount: $confirmedCount,
+            pendingCount: $pendingCount,
         );
     }
 

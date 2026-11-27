@@ -241,3 +241,44 @@ it('shows no volunteer names on the schedule when the names setting is off', fun
         ->assertDontSee('Freja')
         ->assertDontSee('Hansen');
 });
+
+it('sets and clears the default hour goal through team settings', function () {
+    $team = Team::factory()->create();
+    $admin = User::factory()->create(['locale' => 'en']);
+    Membership::factory()->admin()->for($admin)->for($team)->create();
+
+    $settings = Livewire::actingAs($admin)
+        ->test('pages::team.settings')
+        ->assertSee('Default hour goal')
+        ->assertSet('defaultHourGoal', '')
+        ->set('defaultHourGoal', '24')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($team->fresh()->settings->defaultHourGoal)->toBe(24);
+
+    $settings
+        ->set('defaultHourGoal', '')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($team->fresh()->settings->defaultHourGoal)->toBeNull();
+});
+
+it('rejects invalid default hour goals', function (string $hours) {
+    $team = Team::factory()->create(['settings' => ['default_hour_goal' => 24]]);
+    $admin = Membership::factory()->admin()->for($team)->create()->user()->firstOrFail();
+
+    Livewire::actingAs($admin)
+        ->test('pages::team.settings')
+        ->set('defaultHourGoal', $hours)
+        ->call('save')
+        ->assertHasErrors(['defaultHourGoal']);
+
+    expect($team->fresh()->settings->defaultHourGoal)->toBe(24);
+})->with([
+    'zero' => '0',
+    'negative' => '-2',
+    'fractional' => '2.5',
+    'non-numeric' => 'abc',
+]);

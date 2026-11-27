@@ -14,7 +14,7 @@ it('lets a volunteer request a shift and an admin confirm it', function () {
     $team = Team::factory()->create([
         'name' => 'Bar Team',
         'timezone' => 'Europe/Copenhagen',
-        'settings' => new TeamSettings(shiftsRequireConfirmation: true),
+        'settings' => new TeamSettings(shiftsRequireConfirmation: true, defaultHourGoal: 24),
     ]);
     $season = Season::factory()->for($team)->create(['name' => Season::DEFAULT_NAME]);
     $team->update(['current_season_id' => $season->id]);
@@ -34,14 +34,19 @@ it('lets a volunteer request a shift and an admin confirm it', function () {
     $this->actingAs($volunteer);
 
     visit('/schedule')
+        ->on()->mobile()
+        ->assertSeeIn('@hour-goal-progress', '0 / 24 h · 0 confirmed, 0 pending')
         ->assertSee('08:00–16:00')
         ->assertSee('0 / 2')
         ->click("@sign-up-slot-{$slot->id}")
         ->assertSee('Your shift request has been sent.')
+        ->assertSeeIn('@hour-goal-progress', '8 / 24 h · 0 confirmed, 1 pending')
         ->assertSee('0 / 2')
         ->assertSee('Pending')
         ->navigate('/my-shifts')
         ->assertPathIs('/my-shifts')
+        ->assertSeeIn('@hour-goal-progress', '8 / 24 h · 0 confirmed, 1 pending')
+        ->assertSeeIn('@my-planned-hours', '0 h')
         ->assertSee('Pending')
         ->assertNoSmoke();
 
@@ -68,4 +73,12 @@ it('lets a volunteer request a shift and an admin confirm it', function () {
 
     expect($shift->fresh()->status)->toBe(ShiftStatus::Confirmed);
     expect($shift->fresh()->confirmed_at)->not->toBeNull();
+
+    $this->actingAs($volunteer);
+
+    visit('/my-shifts')
+        ->on()->mobile()
+        ->assertSeeIn('@hour-goal-progress', '8 / 24 h · 1 confirmed, 0 pending')
+        ->assertSeeIn('@my-planned-hours', '8 h')
+        ->assertNoSmoke();
 });
