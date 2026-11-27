@@ -27,7 +27,7 @@ class ShiftPolicy
 
     public function create(User $user, Slot $slot): bool
     {
-        return $user->activeMemberships()->where('team_id', $slot->season->team_id)->exists();
+        return $user->can('signUp', $slot);
     }
 
     public function update(User $user, Shift $shift): bool

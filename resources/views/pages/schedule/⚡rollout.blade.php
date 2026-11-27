@@ -27,9 +27,9 @@ new class extends Component
     /** @var list<string> */
     public array $selectedDates = [];
 
-    /** @var list<array{start: string, end: string, capacity: int|string}> */
+    /** @var list<array{start: string, end: string, capacity: int|string, isAdminOnly?: bool}> */
     public array $intervals = [
-        ['start' => '08:00', 'end' => '16:00', 'capacity' => 4],
+        ['start' => '08:00', 'end' => '16:00', 'capacity' => 4, 'isAdminOnly' => false],
     ];
 
     protected Team $team;
@@ -104,6 +104,7 @@ new class extends Component
             'start' => '16:00',
             'end' => '00:00',
             'capacity' => max(1, (int) $last['capacity']),
+            'isAdminOnly' => false,
         ];
     }
 
@@ -130,14 +131,16 @@ new class extends Component
             'intervals.*.start' => ['required', 'date_format:H:i'],
             'intervals.*.end' => ['required', 'date_format:H:i', 'different:intervals.*.start'],
             'intervals.*.capacity' => ['required', 'integer', 'min:1'],
+            'intervals.*.isAdminOnly' => ['sometimes', 'boolean'],
         ]);
 
-        /** @var list<array{start: string, end: string, capacity: int}> $normalizedIntervals */
+        /** @var list<array{start: string, end: string, capacity: int, isAdminOnly: bool}> $normalizedIntervals */
         $normalizedIntervals = array_map(
             fn (array $interval): array => [
                 'start' => (string) $interval['start'],
                 'end' => (string) $interval['end'],
                 'capacity' => (int) $interval['capacity'],
+                'isAdminOnly' => (bool) ($interval['isAdminOnly'] ?? false),
             ],
             array_values($validated['intervals']),
         );
@@ -238,6 +241,7 @@ new class extends Component
                 'start' => $start,
                 'end' => $end,
                 'capacity' => $capacity,
+                'isAdminOnly' => (bool) ($interval['isAdminOnly'] ?? false),
             ];
         }
 
@@ -464,6 +468,15 @@ new class extends Component
                                 />
                             @endif
                         </div>
+
+                        <div class="sm:col-span-12">
+                            <flux:checkbox
+                                wire:model.live="intervals.{{ $index }}.isAdminOnly"
+                                :label="__('Admin-only')"
+                                data-test="interval-{{ $index }}-admin-only"
+                            />
+                            <flux:error name="intervals.{{ $index }}.isAdminOnly" />
+                        </div>
                     </div>
                 @endforeach
             </div>
@@ -502,6 +515,9 @@ new class extends Component
                                 </span>
                                 @if ($plannedSlot['endsNextDay'])
                                     <flux:badge size="sm" color="zinc">{{ __('Ends next day') }}</flux:badge>
+                                @endif
+                                @if ($plannedSlot['isAdminOnly'])
+                                    <flux:badge size="sm" color="purple">{{ __('Admin-only') }}</flux:badge>
                                 @endif
                                 @if ($plannedSlot['isDuplicate'])
                                     <flux:badge size="sm" color="amber">{{ __('Already exists') }}</flux:badge>

@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
 /**
- * @phpstan-type RolloutInterval array{start: string, end: string, capacity: int}
+ * @phpstan-type RolloutInterval array{start: string, end: string, capacity: int, isAdminOnly?: bool}
  */
 class Rollout
 {
@@ -53,6 +53,7 @@ class Rollout
                     'endTime' => $interval['end'],
                     'endsNextDay' => $window->endsNextDay,
                     'capacity' => $interval['capacity'],
+                    'isAdminOnly' => $interval['isAdminOnly'],
                     'isDuplicate' => false,
                     'intervalIndex' => $intervalIndex,
                 ];
@@ -118,6 +119,7 @@ class Rollout
                     'local_start_time' => $interval['start'],
                     'local_end_time' => $interval['end'],
                     'capacity' => $interval['capacity'],
+                    'is_admin_only' => $interval['isAdminOnly'],
                 ]);
 
                 foreach ($normalizedDates as $date) {
@@ -136,6 +138,7 @@ class Rollout
                         'starts_at' => $window->startsAt,
                         'ends_at' => $window->endsAt,
                         'capacity' => $interval['capacity'],
+                        'is_admin_only' => $series->is_admin_only,
                     ]);
                 }
 
@@ -176,7 +179,7 @@ class Rollout
 
     /**
      * @param  array<int, RolloutInterval>  $intervals
-     * @return list<RolloutInterval>
+     * @return list<array{start: string, end: string, capacity: int, isAdminOnly: bool}>
      */
     private function normalizeIntervals(array $intervals): array
     {
@@ -225,6 +228,7 @@ class Rollout
                 'start' => $start,
                 'end' => $end,
                 'capacity' => $capacity,
+                'isAdminOnly' => $interval['isAdminOnly'] ?? false,
             ];
         }
 

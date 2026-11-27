@@ -187,6 +187,10 @@ new class extends Component
                             {{ $startsLocal->format('H:i') }}–{{ $endsLocal->format('H:i') }}
                         </div>
 
+                        @if ($slot->is_admin_only)
+                            <flux:badge size="sm" color="purple">{{ __('Admin-only') }}</flux:badge>
+                        @endif
+
                         @if ($startedPreviousDay)
                             <flux:text class="text-xs">{{ __('Started previous day') }}</flux:text>
                         @elseif ($isOvernight)

@@ -8,17 +8,30 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use LogicException;
 
 /**
  * @property string $local_start_time
  * @property string $local_end_time
  * @property int $capacity
+ * @property bool $is_admin_only
  */
-#[Fillable(['season_id', 'local_start_time', 'local_end_time', 'capacity'])]
+#[Fillable(['season_id', 'local_start_time', 'local_end_time', 'capacity', 'is_admin_only'])]
 class SlotSeries extends Model
 {
+    protected $attributes = ['is_admin_only' => false];
+
     /** @use HasFactory<SlotSeriesFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::updating(function (self $series): void {
+            if ($series->isDirty('is_admin_only')) {
+                throw new LogicException('The Admin-only flag cannot change after series creation.');
+            }
+        });
+    }
 
     /** @return BelongsTo<Season, $this> */
     public function season(): BelongsTo
@@ -37,6 +50,7 @@ class SlotSeries extends Model
     {
         return [
             'capacity' => 'integer',
+            'is_admin_only' => 'boolean',
         ];
     }
 }

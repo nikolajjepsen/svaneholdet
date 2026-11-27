@@ -45,6 +45,8 @@ new class extends Component
 
     public int $capacity = 4;
 
+    public bool $isAdminOnly = false;
+
     protected Team $team;
 
     public function mount(CurrentTeam $currentTeam): void
@@ -82,6 +84,7 @@ new class extends Component
             'startTime' => ['required', 'date_format:H:i'],
             'endTime' => ['required', 'date_format:H:i', 'different:startTime'],
             'capacity' => ['required', 'integer', 'min:1'],
+            'isAdminOnly' => ['required', 'boolean'],
         ]);
 
         $slots->createSingle(
@@ -91,8 +94,10 @@ new class extends Component
             startTime: $validated['startTime'],
             endTime: $validated['endTime'],
             capacity: (int) $validated['capacity'],
+            isAdminOnly: (bool) $validated['isAdminOnly'],
         );
 
+        $this->reset('isAdminOnly');
         $this->showCreateSlotModal = false;
         $this->statusMessage = __('Slot created.');
     }
@@ -221,6 +226,7 @@ new class extends Component
 
         if ($season !== null) {
             $slots = $season->slots()
+                ->when(! $isAdmin, fn ($query) => $query->where('is_admin_only', false))
                 ->when($isAdmin, fn ($query) => $query->withCount([
                     'shifts as pending_shifts_count' => fn ($shiftsQuery) => $shiftsQuery->where('status', ShiftStatus::Pending),
                 ]))
@@ -365,7 +371,11 @@ new class extends Component
                                             @endif
                                         </div>
 
-                                        <div class="flex items-center gap-2">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            @if ($slot->is_admin_only)
+                                                <flux:badge size="sm" color="purple">{{ __('Admin-only') }}</flux:badge>
+                                            @endif
+
                                             @if ($isAdmin && $pendingCount > 0)
                                                 <flux:badge size="sm" color="amber" data-test="pending-count-slot-{{ $slot->id }}">
                                                     {{ __(':count pending', ['count' => $pendingCount]) }}
@@ -378,7 +388,7 @@ new class extends Component
                                         </div>
                                     </div>
 
-                                    @if ($showConfirmedVolunteerNames && $capacityShifts->isNotEmpty())
+                                    @if (! $slot->is_admin_only && $showConfirmedVolunteerNames && $capacityShifts->isNotEmpty())
                                         @php
                                             $displayedConfirmedShifts = $isAdmin
                                                 ? $capacityShifts
@@ -513,6 +523,8 @@ new class extends Component
                         <flux:input type="number" name="capacity" min="1" wire:model="capacity" required />
                         <flux:error name="capacity" />
                     </flux:field>
+
+                    <flux:checkbox wire:model="isAdminOnly" :label="__('Admin-only')" data-test="create-slot-admin-only" />
 
                     <div class="flex justify-end gap-2">
                         <flux:button type="button" variant="ghost" wire:click="$set('showCreateSlotModal', false)">
