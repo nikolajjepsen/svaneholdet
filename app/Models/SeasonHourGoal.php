@@ -25,4 +25,10 @@ class SeasonHourGoal extends Model
     {
         return $this->belongsTo(Membership::class);
     }
+
+    /** @return array<string, string> */
+    protected function casts(): array
+    {
+        return ['hours' => 'integer'];
+    }
 }

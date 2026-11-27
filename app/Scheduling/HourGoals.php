@@ -26,6 +26,18 @@ class HourGoals
         return self::effective($settings, $season->hourGoals()->whereBelongsTo($membership)->first());
     }
 
+    public static function label(TeamSettings $settings, ?SeasonHourGoal $override): string
+    {
+        $effectiveGoal = self::effective($settings, $override);
+
+        return match (true) {
+            $override?->hours === 0 => __('Exempt'),
+            $effectiveGoal === null => __('No hour goal'),
+            $override === null => __(':hours h (team default)', ['hours' => $effectiveGoal]),
+            default => __(':hours h (custom)', ['hours' => $effectiveGoal]),
+        };
+    }
+
     public function setOverride(Season $season, Membership $membership, User $actor, ?int $hours): void
     {
         Gate::forUser($actor)->authorize('update', $season);

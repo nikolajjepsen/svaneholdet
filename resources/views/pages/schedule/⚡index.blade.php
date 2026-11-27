@@ -1,7 +1,6 @@
 <?php
 
 use App\Auth\CurrentTeam;
-use App\Enums\MembershipRole;
 use App\Enums\ShiftStatus;
 use App\Models\Season;
 use App\Models\Shift;
@@ -234,13 +233,7 @@ new class extends Component
                     ->where('membership_id', $membership?->id)
                     ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value]),
                 ])
-                ->with([
-                    'confirmedShifts' => fn ($shiftsQuery) => $shiftsQuery
-                        ->select(['id', 'slot_id', 'membership_id'])
-                        ->orderBy('confirmed_at')
-                        ->orderBy('id')
-                        ->with('membership:id,role,user_id', 'membership.user:id,name'),
-                ])
+                ->withConfirmedShiftMembers()
                 ->orderBy('starts_at')
                 ->orderBy('ends_at')
                 ->orderBy('id')
@@ -353,7 +346,6 @@ new class extends Component
                                     $isOvernight = ! $startsLocal->isSameDay($endsLocal);
                                     $capacityShifts = $slot->capacityCountingShifts($slot->confirmedShifts);
                                     $confirmedCount = $capacityShifts->count();
-                                    $confirmedAdmins = $slot->confirmedShifts->whereStrict('membership.role', MembershipRole::Admin);
                                     $pendingCount = $isAdmin ? (int) $slot->pending_shifts_count : 0;
                                     $displayedCount = $isAdmin ? $confirmedCount : min($confirmedCount, $slot->capacity);
                                     $memberShift = $slot->shifts->first();
@@ -399,14 +391,7 @@ new class extends Component
                                         </flux:text>
                                     @endif
 
-                                    @if ($confirmedAdmins->isNotEmpty())
-                                        <div>
-                                            <flux:heading size="sm" level="3">{{ __('Admins') }}</flux:heading>
-                                            <flux:text class="text-sm">
-                                                {{ $confirmedAdmins->map(fn (Shift $shift): string => $shift->membership->user->firstName())->join(', ') }}
-                                            </flux:text>
-                                        </div>
-                                    @endif
+                                    <x-confirmed-admins :shifts="$slot->confirmedShifts" />
 
                                     <div class="flex flex-wrap items-center justify-end gap-2">
                                         @if ($isAdmin)

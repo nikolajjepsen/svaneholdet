@@ -24,7 +24,7 @@ it('rechecks admin-only eligibility when :dataset waits for demotion', function 
         'ends_at' => now()->addDays(2)->addHours(4),
     ]);
     $admin = Membership::factory()->admin()->for($team)->create();
-    $manager = Membership::factory()->admin()->for($team)->create();
+    $actingAdmin = Membership::factory()->admin()->for($team)->create();
     $shift = $action === 'confirmation' ? Shift::factory()->pending()->for($slot)->for($admin)->create() : null;
 
     $workerScript = <<<'WORKER'
@@ -32,10 +32,10 @@ require $argv[1].'/vendor/autoload.php';
 $app = require $argv[1].'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
-[$action, $slotId, $adminId, $managerId, $shiftId] = array_slice($argv, 2);
+[$action, $slotId, $adminId, $actingAdminId, $shiftId] = array_slice($argv, 2);
 $slot = App\Models\Slot::query()->findOrFail($slotId);
 $admin = App\Models\Membership::query()->with('user')->findOrFail($adminId);
-$manager = App\Models\User::query()->findOrFail($managerId);
+$actingAdmin = App\Models\User::query()->findOrFail($actingAdminId);
 $shifts = app(App\Scheduling\Shifts::class);
 
 echo Illuminate\Support\Facades\DB::scalar('select pg_backend_pid()').PHP_EOL;
@@ -43,8 +43,8 @@ echo Illuminate\Support\Facades\DB::scalar('select pg_backend_pid()').PHP_EOL;
 try {
     match ($action) {
         'signup' => $shifts->signUp($slot, $admin->user, acceptWarnings: true),
-        'assignment' => $shifts->assign($slot, $admin, $manager, acceptWarnings: true),
-        'confirmation' => $shifts->confirm(App\Models\Shift::query()->findOrFail($shiftId), $manager, acceptWarnings: true),
+        'assignment' => $shifts->assign($slot, $admin, $actingAdmin, acceptWarnings: true),
+        'confirmation' => $shifts->confirm(App\Models\Shift::query()->findOrFail($shiftId), $actingAdmin, acceptWarnings: true),
     };
     echo 'accepted';
 } catch (Illuminate\Auth\Access\AuthorizationException|Illuminate\Validation\ValidationException) {
@@ -54,7 +54,7 @@ WORKER;
 
     $worker = new Process([
         PHP_BINARY, '-r', $workerScript, base_path(), $action, (string) $slot->id,
-        (string) $admin->id, (string) $manager->user_id, (string) $shift?->id,
+        (string) $admin->id, (string) $actingAdmin->user_id, (string) $shift?->id,
     ], base_path(), [
         'APP_ENV' => 'testing',
         'DB_CONNECTION' => 'pgsql',
@@ -80,7 +80,7 @@ WORKER;
 
         expect($blocked)->toBeTrue($worker->getOutput().$worker->getErrorOutput());
 
-        app(Memberships::class)->demote($admin, $manager->user);
+        app(Memberships::class)->demote($admin, $actingAdmin->user);
         DB::commit();
         $worker->wait();
 
@@ -92,6 +92,6 @@ WORKER;
         $worker->stop();
         $team->delete();
         $admin->user->delete();
-        $manager->user->delete();
+        $actingAdmin->user->delete();
     }
 })->with(['signup', 'assignment', 'confirmation']);

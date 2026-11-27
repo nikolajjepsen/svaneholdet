@@ -704,7 +704,7 @@ new class extends Component
             @endphp
             @foreach ([MembershipRole::Volunteer->value => __('Volunteers'), MembershipRole::Admin->value => __('Admins')] as $role => $heading)
                 @if ($confirmedShiftsByRole->has($role))
-                    <div class="space-y-2">
+                    <div wire:key="confirmed-role-{{ $role }}" class="space-y-2">
                         <flux:heading level="3">{{ $heading }}</flux:heading>
                         @foreach ($confirmedShiftsByRole[$role] as $shift)
                             @php

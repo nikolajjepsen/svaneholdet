@@ -9,7 +9,12 @@ use App\Models\SlotSeries;
 use App\Models\Team;
 use App\Models\TeamSettings;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Livewire\Livewire;
+
+beforeEach(function (): void {
+    $this->travelTo(CarbonImmutable::parse('2027-08-03 12:00', 'Europe/Copenhagen'));
+});
 
 function createAdminShiftTeam(?TeamSettings $settings = null): Season
 {
@@ -188,7 +193,7 @@ it('shows admins on day overview without counting them toward capacity or droppi
 it('updates regular slot capacity and over-capacity badges when a member changes role', function () {
     $season = createAdminShiftTeam();
     $slot = Slot::factory()->for($season)->create(['capacity' => 1]);
-    $manager = Membership::factory()->admin()->for(User::factory()->create(['locale' => 'en']))
+    $actingAdmin = Membership::factory()->admin()->for(User::factory()->create(['locale' => 'en']))
         ->for($season->team)->create();
     $seniorVolunteer = Membership::factory()->for($season->team)->create();
     $promotedMember = Membership::factory()->for(User::factory()->create(['name' => 'Katrine Hansen']))
@@ -200,7 +205,7 @@ it('updates regular slot capacity and over-capacity badges when a member changes
     $changedShift = Shift::factory()->confirmed()->for($slot)->for($promotedMember)->create(['confirmed_at' => now()->subHours(2)]);
     $adminShift = Shift::factory()->confirmed()->for($slot)->for($supervisor)->create(['confirmed_at' => now()->subHour()]);
 
-    $this->actingAs($manager->user);
+    $this->actingAs($actingAdmin->user);
     $slotUrl = route('schedule.slots.show', $slot);
 
     $this->get($slotUrl)->assertOk()

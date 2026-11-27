@@ -89,6 +89,8 @@ it('shows goal progress or counts alone according to the admin member’s effect
     string $locale,
     string $summary,
 ) {
+    $this->travelTo(CarbonImmutable::parse('2027-08-05 12:00', 'Europe/Copenhagen'));
+
     $team = Team::factory()->create(['settings' => new TeamSettings(defaultHourGoal: $default)]);
     $season = Season::factory()->for($team)->create();
     $team->update(['current_season_id' => $season->id]);

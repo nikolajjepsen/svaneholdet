@@ -288,6 +288,8 @@ it('filters by date range and attributes midnight-spanning shifts in full to the
 });
 
 it('filters short of goal using season progress alongside date, search, and membership status filters', function () {
+    $this->travelTo(CarbonImmutable::parse('2027-08-06 12:00', 'Europe/Copenhagen'));
+
     [$team, $season] = createHoursTeamWithSeason();
     $team->update(['settings' => new TeamSettings(defaultHourGoal: 8)]);
     $admin = User::factory()->create(['name' => 'Alice Admin', 'locale' => 'en']);

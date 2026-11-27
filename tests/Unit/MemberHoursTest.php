@@ -165,3 +165,15 @@ it('counts goal progress once across confirmed, pending, and adjusted intervals'
         ->and($summary->plannedMinutes)->toBe(600)
         ->and($summary->workedMinutes)->toBe(195);
 });
+
+it('counts the overlap between confirmed and pending overnight shifts only once toward the hour goal', function () {
+    $now = CarbonImmutable::parse('2027-08-05 12:00', 'Europe/Copenhagen');
+    $shifts = [
+        makeMemberHoursShift('2027-08-05 21:30', '2027-08-06 01:30'),
+        makeMemberHoursShift('2027-08-05 23:30', '2027-08-06 03:00', ShiftStatus::Pending),
+    ];
+
+    $summary = (new MemberHours)->summarize($shifts, $now);
+
+    expect($summary->goalProgressMinutes)->toBe(330);
+});

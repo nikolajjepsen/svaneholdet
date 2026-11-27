@@ -7,6 +7,8 @@ use App\Enums\ShiftStatus;
 use Carbon\CarbonImmutable;
 use Database\Factories\SlotFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -59,6 +61,19 @@ class Slot extends Model
     public function confirmedShifts(): HasMany
     {
         return $this->shifts()->where('status', ShiftStatus::Confirmed);
+    }
+
+    /** @param Builder<Slot> $query */
+    #[Scope]
+    protected function withConfirmedShiftMembers(Builder $query): void
+    {
+        $query->with([
+            'confirmedShifts' => fn ($shifts) => $shifts
+                ->select(['id', 'slot_id', 'membership_id'])
+                ->orderBy('confirmed_at')
+                ->orderBy('id')
+                ->with('membership:id,role,user_id', 'membership.user:id,name'),
+        ]);
     }
 
     public function capacityRole(): MembershipRole

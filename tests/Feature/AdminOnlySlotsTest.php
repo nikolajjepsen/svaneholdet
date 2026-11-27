@@ -9,10 +9,14 @@ use App\Models\Slot;
 use App\Models\SlotSeries;
 use App\Models\Team;
 use App\Models\User;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Mail;
 use Livewire\Livewire;
 
 beforeEach(function (): void {
+    $this->travelTo(CarbonImmutable::parse('2027-08-02 12:00', 'Europe/Copenhagen'));
+
     $this->team = Team::factory()->create();
     $this->season = Season::factory()->for($this->team)->create();
     $this->team->update(['current_season_id' => $this->season->id]);
@@ -82,6 +86,34 @@ it('rolls out a mix of slot audiences and preserves them through a series edit',
         ->and($adminSeries->slots()->where('is_admin_only', true)->where('capacity', 3)->count())->toBe(2);
 });
 
+it('authorizes viewing and signing up for each slot audience according to the member’s team and role', function (
+    string $actor,
+    bool $canTakeRegularSlot,
+    bool $canTakeAdminOnlySlot,
+) {
+    $user = match ($actor) {
+        'team admin' => Membership::factory()->admin()->for($this->team)->create()->user,
+        'team volunteer' => Membership::factory()->for($this->team)->create()->user,
+        'other team admin' => Membership::factory()->admin()->create()->user,
+        'outsider' => User::factory()->create(),
+    };
+    $regularSlot = Slot::factory()->for($this->season)->create()->load('season');
+    $adminOnlySlot = Slot::factory()->for($this->season)->create(['is_admin_only' => true])->load('season');
+    $gate = Gate::forUser($user);
+
+    expect($gate->allows('view', $regularSlot))->toBe($canTakeRegularSlot)
+        ->and($gate->allows('signUp', $regularSlot))->toBe($canTakeRegularSlot)
+        ->and($gate->allows('create', [Shift::class, $regularSlot]))->toBe($canTakeRegularSlot)
+        ->and($gate->allows('view', $adminOnlySlot))->toBe($canTakeAdminOnlySlot)
+        ->and($gate->allows('signUp', $adminOnlySlot))->toBe($canTakeAdminOnlySlot)
+        ->and($gate->allows('create', [Shift::class, $adminOnlySlot]))->toBe($canTakeAdminOnlySlot);
+})->with([
+    'same-team admin' => ['team admin', true, true],
+    'same-team volunteer' => ['team volunteer', true, false],
+    'unrelated admin' => ['other team admin', false, false],
+    'outsider' => ['outsider', false, false],
+]);
+
 it('hides admin-only slots and denies their direct routes and signup to a volunteer', function () {
     $series = SlotSeries::factory()->for($this->season)->create(['is_admin_only' => true]);
     $slot = Slot::factory()->for($this->season)->for($series, 'series')->create(['is_admin_only' => true]);
@@ -99,9 +131,33 @@ it('hides admin-only slots and denies their direct routes and signup to a volunt
     $this->get(route('schedule.rollout'))->assertForbidden();
     $this->get(route('day-overview.index'))->assertForbidden();
 
+    foreach (['dashboard', 'my-shifts.index', 'profile.edit', 'language.edit', 'appearance.edit'] as $route) {
+        $this->get(route($route))->assertOk();
+    }
+
     Livewire::test('pages::schedule.index')->call('signUp', $slot->id)->assertForbidden();
 
     $this->assertDatabaseMissing(Shift::class, ['slot_id' => $slot->id, 'membership_id' => $volunteer->id]);
+});
+
+it('denies access to admin-only slots and series outside the current team even for an admin of both teams', function () {
+    $otherSeason = Season::factory()->create();
+    $otherSeries = SlotSeries::factory()->for($otherSeason)->create(['is_admin_only' => true]);
+    $otherSlot = Slot::factory()->for($otherSeason)->for($otherSeries, 'series')->create(['is_admin_only' => true]);
+    $ownSeries = SlotSeries::factory()->for($this->season)->create(['is_admin_only' => true]);
+    $ownSlot = Slot::factory()->for($this->season)->for($ownSeries, 'series')->create(['is_admin_only' => true]);
+    $admin = Membership::factory()->admin()->for($this->team)->create();
+    Membership::factory()->admin()->for($otherSeason->team)->for($admin->user)->create();
+
+    $this->actingAs($admin->user)->withSession(['current_team_id' => $this->team->id]);
+
+    $this->get(route('schedule.slots.show', $otherSlot))->assertForbidden();
+    $this->get(route('schedule.series.show', $otherSeries))->assertForbidden();
+    $this->get(route('schedule.slots.show', $ownSlot))->assertOk();
+    $this->get(route('schedule.series.show', $ownSeries))->assertOk();
+    $this->get(route('schedule.index'))->assertOk()
+        ->assertSeeHtml('data-test="slot-card-'.$ownSlot->id.'"')
+        ->assertDontSeeHtml('data-test="slot-card-'.$otherSlot->id.'"');
 });
 
 it('excludes and refuses a volunteer in the assignment picker on an admin-only slot', function () {
@@ -170,6 +226,8 @@ it('warns before overbooking an admin-only slot and ranks confirmed admins by co
 
     $this->get(route('day-overview.index'))->assertOk()
         ->assertSeeTextInOrder(['Unique confirmed members', '2', 'Admin-only', 'Astrid', '2 / 1']);
+
+    Mail::assertNothingSent();
 })->with(['signup', 'assignment', 'confirmation']);
 
 it('warns when lowering capacity below the number of confirmed admins', function (bool $editSeries) {
@@ -205,7 +263,7 @@ it('warns when lowering capacity below the number of confirmed admins', function
 
 it('silently cancels only upcoming admin-only shifts on demotion and preserves worked hours', function () {
     Mail::fake();
-    $manager = Membership::factory()->admin()->for($this->team)
+    $actingAdmin = Membership::factory()->admin()->for($this->team)
         ->for(User::factory()->create(['locale' => 'en']))->create();
     $admin = Membership::factory()->admin()->for($this->team)
         ->for(User::factory()->create(['name' => 'Astrid Andersen', 'locale' => 'en']))->create();
@@ -222,13 +280,13 @@ it('silently cancels only upcoming admin-only shifts on demotion and preserves w
     $regularSlot = Slot::factory()->for($this->season)->create();
 
     $cancelled = Shift::factory()->for($upcoming[0])->for($admin)
-        ->adjusted($upcoming[0]->starts_at->addHour(), $upcoming[0]->ends_at, $manager->user)->create();
+        ->adjusted($upcoming[0]->starts_at->addHour(), $upcoming[0]->ends_at, $actingAdmin->user)->create();
     $pending = Shift::factory()->pending()->for($upcoming[1])->for($admin)->create();
     $pastShift = Shift::factory()->for($past)->for($admin)
-        ->adjusted($past->starts_at->addHour(), $past->ends_at, $manager->user)->create();
+        ->adjusted($past->starts_at->addHour(), $past->ends_at, $actingAdmin->user)->create();
     $regularShift = Shift::factory()->confirmed()->for($regularSlot)->for($admin)->create();
 
-    $this->actingAs($manager->user);
+    $this->actingAs($actingAdmin->user);
     Livewire::test('pages::members.index')->call('demote', $admin->id)->assertHasNoErrors();
 
     $this->assertDatabaseHas(Shift::class, [
@@ -254,15 +312,15 @@ it('silently cancels only upcoming admin-only shifts on demotion and preserves w
 
 it('refuses signup from an open warning after the admin is demoted', function () {
     $slot = Slot::factory()->for($this->season)->create(['is_admin_only' => true, 'capacity' => 1]);
-    $manager = Membership::factory()->admin()->for($this->team)->create();
+    $actingAdmin = Membership::factory()->admin()->for($this->team)->create();
     $admin = Membership::factory()->admin()->for($this->team)->create();
-    Shift::factory()->confirmed()->for($slot)->for($manager)->create();
+    Shift::factory()->confirmed()->for($slot)->for($actingAdmin)->create();
 
     $this->actingAs($admin->user);
     $page = Livewire::test('pages::schedule.index')->call('signUp', $slot->id)
         ->assertSet('showSignUpWarningModal', true);
 
-    $this->actingAs($manager->user);
+    $this->actingAs($actingAdmin->user);
     Livewire::test('pages::members.index')->call('demote', $admin->id)->assertHasNoErrors();
 
     $this->actingAs($admin->user);

@@ -5,6 +5,7 @@ use App\Enums\MembershipRole;
 use App\Enums\MembershipStatus;
 use App\Models\Membership;
 use App\Models\Season;
+use App\Models\Slot;
 use App\Models\SlotSeries;
 use App\Models\Team;
 use App\Models\User;
@@ -15,6 +16,7 @@ it('forbids volunteers from opening any team administration page', function () {
     $otherTeam = Team::factory()->create();
     $season = Season::factory()->for($team)->create();
     $series = SlotSeries::factory()->for($season)->create();
+    $slot = Slot::factory()->for($season)->for($series, 'series')->create();
     $volunteer = User::factory()->create(['last_chosen_team_id' => $team->id]);
     Membership::factory()->for($volunteer)->for($team)->create();
     Membership::factory()->admin()->for($volunteer)->for($otherTeam)->create();
@@ -25,8 +27,9 @@ it('forbids volunteers from opening any team administration page', function () {
         $this->get(route($route))->assertForbidden();
     }
     $this->get(route('schedule.series.show', $series))->assertForbidden();
+    $this->get(route('schedule.slots.show', $slot))->assertForbidden();
 
-    foreach (['dashboard', 'profile.edit', 'language.edit', 'appearance.edit'] as $route) {
+    foreach (['dashboard', 'schedule.index', 'my-shifts.index', 'profile.edit', 'language.edit', 'appearance.edit'] as $route) {
         $this->get(route($route))
             ->assertOk()
             ->assertDontSee(route('team.settings'))

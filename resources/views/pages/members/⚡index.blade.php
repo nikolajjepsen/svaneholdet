@@ -284,21 +284,9 @@ new class extends Component
                     </flux:table.cell>
 
                     @if ($season !== null)
-                        @php
-                            $override = $hourGoalOverrides->get($membership->id);
-                            $effectiveGoal = HourGoals::effective($team->settings, $override);
-                        @endphp
                         <flux:table.cell>
                             <div class="flex items-center gap-2">
-                                @if ($override?->hours === 0)
-                                    {{ __('Exempt') }}
-                                @elseif ($effectiveGoal === null)
-                                    {{ __('No hour goal') }}
-                                @elseif ($override === null)
-                                    {{ __(':hours h (team default)', ['hours' => $effectiveGoal]) }}
-                                @else
-                                    {{ __(':hours h (custom)', ['hours' => $effectiveGoal]) }}
-                                @endif
+                                {{ HourGoals::label($team->settings, $hourGoalOverrides->get($membership->id)) }}
                                 <flux:button
                                     size="sm"
                                     variant="ghost"

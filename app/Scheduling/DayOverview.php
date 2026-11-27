@@ -51,13 +51,7 @@ class DayOverview
             ->where('starts_at', '<', $dayEndUtc)
             ->where('ends_at', '>', $dayStartUtc)
             ->withCount('pendingShifts')
-            ->with([
-                'confirmedShifts' => fn ($query) => $query
-                    ->select(['id', 'slot_id', 'membership_id'])
-                    ->orderBy('confirmed_at')
-                    ->orderBy('id')
-                    ->with('membership:id,role,user_id', 'membership.user:id,name'),
-            ])
+            ->withConfirmedShiftMembers()
             ->orderBy('starts_at')
             ->orderBy('ends_at')
             ->orderBy('id')
