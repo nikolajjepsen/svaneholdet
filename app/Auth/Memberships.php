@@ -2,6 +2,7 @@
 
 namespace App\Auth;
 
+use App\Enums\AttendanceStatus;
 use App\Enums\MembershipRole;
 use App\Enums\MembershipStatus;
 use App\Enums\ShiftStatus;
@@ -49,7 +50,14 @@ class Memberships
                 ->where('membership_id', $locked->id)
                 ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value])
                 ->whereHas('slot', fn (Builder $query): Builder => $query->where('starts_at', '>', now()))
-                ->update(['status' => ShiftStatus::Cancelled->value]);
+                ->update([
+                    'status' => ShiftStatus::Cancelled->value,
+                    'attendance_status' => AttendanceStatus::Planned->value,
+                    'actual_starts_at' => null,
+                    'actual_ends_at' => null,
+                    'attendance_recorded_by' => null,
+                    'attendance_recorded_at' => null,
+                ]);
         });
     }
 
