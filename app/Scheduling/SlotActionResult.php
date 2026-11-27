@@ -12,6 +12,7 @@ final readonly class SlotActionResult
     public function __construct(
         public ?Slot $slot = null,
         public array $warnings = [],
+        public int $updatedCount = 0,
     ) {}
 
     public function hasWarnings(): bool

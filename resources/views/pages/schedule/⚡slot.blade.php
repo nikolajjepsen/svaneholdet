@@ -27,6 +27,10 @@ new class extends Component
 
     public ?int $assignMembershipId = null;
 
+    public string $startTime = '08:00';
+
+    public string $endTime = '16:00';
+
     public int $capacity = 1;
 
     public bool $showOverCapacityModal = false;
@@ -37,9 +41,19 @@ new class extends Component
     #[Locked]
     public ?int $overCapacityValue = null;
 
+    #[Locked]
+    public ?string $pendingStartTime = null;
+
+    #[Locked]
+    public ?string $pendingEndTime = null;
+
     /** @var list<string> */
     #[Locked]
     public array $overCapacityWarnings = [];
+
+    public bool $showDeleteModal = false;
+
+    public bool $notifyMembersOnDelete = true;
 
     protected Team $team;
 
@@ -58,6 +72,8 @@ new class extends Component
         $this->teamId = $team->id;
         $this->slot = $slot;
         $this->slotId = $slot->id;
+        $this->startTime = $slot->starts_at->setTimezone($team->timezone)->format('H:i');
+        $this->endTime = $slot->ends_at->setTimezone($team->timezone)->format('H:i');
         $this->capacity = $slot->capacity;
     }
 
@@ -86,6 +102,21 @@ new class extends Component
         $this->performAssign((int) $validated['assignMembershipId'], $shifts, acceptWarnings: false);
     }
 
+    public function updateTimes(Slots $slots): void
+    {
+        $this->statusMessage = null;
+        $this->resetErrorBag();
+
+        Gate::authorize('update', $this->slot);
+
+        $validated = $this->validate([
+            'startTime' => ['required', 'date_format:H:i'],
+            'endTime' => ['required', 'date_format:H:i', 'different:startTime'],
+        ]);
+
+        $this->performUpdateTimes($validated['startTime'], $validated['endTime'], $slots, acceptWarnings: false);
+    }
+
     public function updateCapacity(Slots $slots): void
     {
         $this->statusMessage = null;
@@ -98,6 +129,29 @@ new class extends Component
         ]);
 
         $this->performUpdateCapacity((int) $validated['capacity'], $slots, acceptWarnings: false);
+    }
+
+    public function openDeleteModal(): void
+    {
+        $this->statusMessage = null;
+        $this->resetErrorBag();
+        $this->notifyMembersOnDelete = true;
+        $this->showDeleteModal = true;
+    }
+
+    public function deleteSlot(Slots $slots): void
+    {
+        $this->statusMessage = null;
+        $this->resetErrorBag();
+
+        Gate::authorize('delete', $this->slot);
+
+        $slots->delete($this->slot, $this->user(), notifyMembers: $this->notifyMembersOnDelete);
+
+        $this->showDeleteModal = false;
+        session()->flash('status', __('Slot deleted.'));
+
+        $this->redirectRoute('schedule.index', navigate: true);
     }
 
     public function confirmShift(int $shiftId, Shifts $shifts): void
@@ -144,10 +198,24 @@ new class extends Component
 
         $action = $this->overCapacityAction;
         $value = $this->overCapacityValue;
+        $pendingStart = $this->pendingStartTime;
+        $pendingEnd = $this->pendingEndTime;
 
         $this->dismissOverCapacityWarning();
 
-        if ($action === null || $value === null) {
+        if ($action === null) {
+            return;
+        }
+
+        if ($action === 'times') {
+            if ($pendingStart !== null && $pendingEnd !== null) {
+                $this->performUpdateTimes($pendingStart, $pendingEnd, $slots, acceptWarnings: true);
+            }
+
+            return;
+        }
+
+        if ($value === null) {
             return;
         }
 
@@ -164,6 +232,8 @@ new class extends Component
         $this->showOverCapacityModal = false;
         $this->overCapacityAction = null;
         $this->overCapacityValue = null;
+        $this->pendingStartTime = null;
+        $this->pendingEndTime = null;
         $this->overCapacityWarnings = [];
     }
 
@@ -203,6 +273,29 @@ new class extends Component
         $this->statusMessage = __('Shift confirmed.');
     }
 
+    private function performUpdateTimes(string $startTime, string $endTime, Slots $slots, bool $acceptWarnings): void
+    {
+        Gate::authorize('update', $this->slot);
+
+        $result = $slots->updateTimes($this->slot, $this->user(), $startTime, $endTime, acceptWarnings: $acceptWarnings);
+
+        if ($result->hasWarnings()) {
+            $this->pendingStartTime = $startTime;
+            $this->pendingEndTime = $endTime;
+            $this->openOverCapacityModal('times', null, $result->warnings);
+
+            return;
+        }
+
+        if ($result->slot !== null) {
+            $this->slot = $result->slot;
+            $this->startTime = $result->slot->starts_at->setTimezone($this->team->timezone)->format('H:i');
+            $this->endTime = $result->slot->ends_at->setTimezone($this->team->timezone)->format('H:i');
+        }
+
+        $this->statusMessage = __('Slot times updated.');
+    }
+
     private function performUpdateCapacity(int $newCapacity, Slots $slots, bool $acceptWarnings): void
     {
         Gate::authorize('update', $this->slot);
@@ -226,7 +319,7 @@ new class extends Component
     /**
      * @param  list<string>  $warnings
      */
-    private function openOverCapacityModal(string $action, int $value, array $warnings): void
+    private function openOverCapacityModal(string $action, ?int $value, array $warnings): void
     {
         $this->overCapacityAction = $action;
         $this->overCapacityValue = $value;
@@ -281,6 +374,7 @@ new class extends Component
             'startsLocal' => $startsLocal,
             'endsLocal' => $endsLocal,
             'isOvernight' => ! $startsLocal->isSameDay($endsLocal),
+            'hasStarted' => $this->slot->hasStarted(),
             'confirmedShifts' => $confirmedShifts,
             'pendingShifts' => $pendingShifts,
             'assignableMemberships' => $assignableMemberships,
@@ -289,10 +383,35 @@ new class extends Component
 }; ?>
 
 <section class="max-w-4xl space-y-6">
-    <div>
+    <div class="flex flex-wrap items-center justify-between gap-3">
         <flux:button variant="ghost" size="sm" icon="arrow-left" :href="route('schedule.index')" wire:navigate>
             {{ __('Back to schedule') }}
         </flux:button>
+
+        <div class="flex flex-wrap items-center gap-2">
+            @if ($currentSlot->slot_series_id !== null)
+                <flux:button
+                    variant="ghost"
+                    size="sm"
+                    :href="route('schedule.series.show', $currentSlot->slot_series_id)"
+                    wire:navigate
+                    data-test="open-slot-series"
+                >
+                    {{ __('Edit series') }}
+                </flux:button>
+            @endif
+
+            @if (! $hasStarted)
+                <flux:button
+                    variant="danger"
+                    size="sm"
+                    wire:click="openDeleteModal"
+                    data-test="open-delete-slot"
+                >
+                    {{ __('Delete slot') }}
+                </flux:button>
+            @endif
+        </div>
     </div>
 
     <div class="flex flex-wrap items-center justify-between gap-4">
@@ -309,6 +428,7 @@ new class extends Component
 
         @php
             $confirmedCount = $confirmedShifts->count();
+            $pendingCount = $pendingShifts->count();
             $capacityBadgeColor = $confirmedCount > $currentSlot->capacity
                 ? 'amber'
                 : ($confirmedCount === $currentSlot->capacity ? 'zinc' : 'blue');
@@ -325,40 +445,47 @@ new class extends Component
         </flux:callout>
     @endif
 
-    @if ($errors->has('shift'))
+    @if ($errors->has('shift') || $errors->has('slot'))
         <flux:callout icon="exclamation-circle" color="red" role="alert">
-            <flux:callout.text>{{ $errors->first('shift') }}</flux:callout.text>
+            <flux:callout.text>{{ $errors->first('shift') ?: $errors->first('slot') }}</flux:callout.text>
+        </flux:callout>
+    @endif
+
+    @if ($errors->has('times'))
+        <flux:callout icon="exclamation-circle" color="red" role="alert" data-test="slot-times-errors">
+            <div class="space-y-1">
+                @foreach ($errors->get('times') as $timeError)
+                    <flux:callout.text>{{ $timeError }}</flux:callout.text>
+                @endforeach
+            </div>
         </flux:callout>
     @endif
 
     <div class="grid gap-4 md:grid-cols-2">
         <flux:card class="space-y-4">
-            <flux:heading size="md" level="2">{{ __('Assign member') }}</flux:heading>
+            <flux:heading size="md" level="2">{{ __('Slot times') }}</flux:heading>
 
-            @if ($assignableMemberships->isEmpty())
-                <flux:text>{{ __('All active members are already on this slot.') }}</flux:text>
-            @else
-                <form wire:submit="assignMember" class="space-y-4">
+            <form wire:submit="updateTimes" class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
                     <flux:field>
-                        <flux:label>{{ __('Member') }}</flux:label>
-                        <flux:select wire:model="assignMembershipId" name="assignMembershipId" data-test="assign-member-select">
-                            <flux:select.option value="">{{ __('Choose a member') }}</flux:select.option>
-                            @foreach ($assignableMemberships as $membership)
-                                <flux:select.option wire:key="assignable-member-{{ $membership->id }}" value="{{ $membership->id }}">
-                                    {{ $membership->user->name }}
-                                </flux:select.option>
-                            @endforeach
-                        </flux:select>
-                        <flux:error name="assignMembershipId" />
+                        <flux:label>{{ __('Start time') }}</flux:label>
+                        <flux:input type="time" name="startTime" wire:model="startTime" data-test="slot-start-time-input" required />
+                        <flux:error name="startTime" />
                     </flux:field>
 
-                    <div class="flex justify-end">
-                        <flux:button type="submit" variant="primary" size="sm" data-test="assign-member-submit">
-                            {{ __('Assign') }}
-                        </flux:button>
-                    </div>
-                </form>
-            @endif
+                    <flux:field>
+                        <flux:label>{{ __('End time') }}</flux:label>
+                        <flux:input type="time" name="endTime" wire:model="endTime" data-test="slot-end-time-input" required />
+                        <flux:error name="endTime" />
+                    </flux:field>
+                </div>
+
+                <div class="flex justify-end">
+                    <flux:button type="submit" variant="primary" size="sm" data-test="save-times-submit">
+                        {{ __('Save times') }}
+                    </flux:button>
+                </div>
+            </form>
         </flux:card>
 
         <flux:card class="space-y-4">
@@ -379,6 +506,35 @@ new class extends Component
             </form>
         </flux:card>
     </div>
+
+    <flux:card class="space-y-4">
+        <flux:heading size="md" level="2">{{ __('Assign member') }}</flux:heading>
+
+        @if ($assignableMemberships->isEmpty())
+            <flux:text>{{ __('All active members are already on this slot.') }}</flux:text>
+        @else
+            <form wire:submit="assignMember" class="space-y-4">
+                <flux:field>
+                    <flux:label>{{ __('Member') }}</flux:label>
+                    <flux:select wire:model="assignMembershipId" name="assignMembershipId" data-test="assign-member-select">
+                        <flux:select.option value="">{{ __('Choose a member') }}</flux:select.option>
+                        @foreach ($assignableMemberships as $membership)
+                            <flux:select.option wire:key="assignable-member-{{ $membership->id }}" value="{{ $membership->id }}">
+                                {{ $membership->user->name }}
+                            </flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    <flux:error name="assignMembershipId" />
+                </flux:field>
+
+                <div class="flex justify-end">
+                    <flux:button type="submit" variant="primary" size="sm" data-test="assign-member-submit">
+                        {{ __('Assign') }}
+                    </flux:button>
+                </div>
+            </form>
+        @endif
+    </flux:card>
 
     <div class="space-y-3">
         <flux:heading size="lg" level="2">{{ __('Pending shifts') }}</flux:heading>
@@ -491,6 +647,36 @@ new class extends Component
                     data-test="accept-over-capacity-warning"
                 >
                     {{ __('Continue anyway') }}
+                </flux:button>
+            </div>
+        </div>
+    </flux:modal>
+
+    <flux:modal wire:model="showDeleteModal" class="w-full max-w-md" data-test="delete-slot-modal">
+        <div class="space-y-5">
+            <flux:heading size="lg">{{ __('Delete slot') }}</flux:heading>
+
+            <flux:text>
+                {{ __('This slot has :confirmed confirmed and :pending pending shifts. Deleting it removes all shifts on this slot.', ['confirmed' => $confirmedCount, 'pending' => $pendingCount]) }}
+            </flux:text>
+
+            <flux:checkbox
+                wire:model="notifyMembersOnDelete"
+                :label="__('Email affected members that this slot is cancelled')"
+                data-test="delete-slot-notify-checkbox"
+            />
+
+            <div class="flex justify-end gap-2">
+                <flux:button type="button" variant="ghost" wire:click="$set('showDeleteModal', false)">
+                    {{ __('Cancel') }}
+                </flux:button>
+                <flux:button
+                    type="button"
+                    variant="danger"
+                    wire:click="deleteSlot"
+                    data-test="confirm-delete-slot"
+                >
+                    {{ __('Delete slot') }}
                 </flux:button>
             </div>
         </div>

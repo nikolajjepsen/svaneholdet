@@ -67,6 +67,11 @@ class Slot extends Model
         return ($at ?? now())->lessThanOrEqualTo($this->cancellationDeadline($team));
     }
 
+    public function hasStarted(?CarbonImmutable $at = null): bool
+    {
+        return $this->starts_at->lessThanOrEqualTo($at ?? now());
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

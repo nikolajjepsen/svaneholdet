@@ -370,6 +370,18 @@ new class extends Component
 
                                     <div class="flex flex-wrap items-center justify-end gap-2">
                                         @if ($isAdmin)
+                                            @if ($slot->slot_series_id !== null)
+                                                <flux:button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    :href="route('schedule.series.show', $slot->slot_series_id)"
+                                                    wire:navigate
+                                                    data-test="open-series-{{ $slot->slot_series_id }}"
+                                                >
+                                                    {{ __('Series') }}
+                                                </flux:button>
+                                            @endif
+
                                             <flux:button
                                                 variant="ghost"
                                                 size="sm"
