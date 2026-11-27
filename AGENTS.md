@@ -10,7 +10,7 @@ When a ticket changes who can access something, its tests exercise every route b
 
 ## Localization
 
-Wrap every new user-facing UI and mail string in `__()` using English text. Add its Danish translation to `lang/da.json` in the same change.
+Wrap every new user-facing UI and mail string in `__()` using English text. Add its Danish translation to `lang/da.json` in the same change. Keep `lang/da.json` sorted by key, so parallel branches don't conflict on it. `tests/Unit/TranslationsTest.php` fails on a missing or misplaced key.
 
 ## Agent skills
 
