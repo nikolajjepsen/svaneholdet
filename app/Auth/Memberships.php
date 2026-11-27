@@ -34,6 +34,7 @@ class Memberships
             if ($locked->role === MembershipRole::Admin) {
                 $this->ensureAnotherAdminRemains($locked->team_id);
                 $locked->update(['role' => MembershipRole::Volunteer]);
+                $this->shifts->cancelUpcomingForMembership($locked, adminOnly: true);
             }
         });
     }

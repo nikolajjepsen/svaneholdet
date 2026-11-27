@@ -235,7 +235,12 @@ new class extends Component
     </div>
 
     <div>
-        <flux:heading size="xl" level="1">{{ __('Slot series') }}</flux:heading>
+        <div class="flex flex-wrap items-center gap-2">
+            <flux:heading size="xl" level="1">{{ __('Slot series') }}</flux:heading>
+            @if ($currentSeries->is_admin_only)
+                <flux:badge size="sm" color="purple">{{ __('Admin-only') }}</flux:badge>
+            @endif
+        </div>
         <flux:text class="mt-1">
             {{ $currentSeries->local_start_time }}–{{ $currentSeries->local_end_time }} · {{ $team->name }}
         </flux:text>

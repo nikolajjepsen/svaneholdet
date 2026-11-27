@@ -13,6 +13,7 @@ use Carbon\CarbonImmutable;
  *     endTime: string,
  *     endsNextDay: bool,
  *     capacity: int,
+ *     isAdminOnly: bool,
  *     isDuplicate: bool,
  *     intervalIndex: int,
  * }

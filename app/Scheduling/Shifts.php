@@ -33,9 +33,12 @@ class Shifts
                 ->lockForUpdate()
                 ->findOrFail($slot->id);
 
-            Gate::forUser($actor)->authorize('signUp', $lockedSlot);
+            $membership = $actor->activeMemberships()
+                ->where('team_id', $lockedSlot->season->team_id)
+                ->lockForUpdate()
+                ->first();
 
-            $membership = $this->resolveActiveMembership($actor, $lockedSlot->season->team_id);
+            Gate::forUser($actor)->authorize('signUp', $lockedSlot);
 
             if ($membership === null) {
                 throw ValidationException::withMessages([
@@ -58,10 +61,12 @@ class Shifts
             $requiresConfirmation = $membership->role !== MembershipRole::Admin
                 && $lockedSlot->season->team->settings->shiftsRequireConfirmation;
 
-            $isFull = $membership->role === $lockedSlot->capacityRole()
-                && $lockedSlot->confirmedCapacityCount() >= $lockedSlot->capacity;
+            $confirmedCount = $membership->role === $lockedSlot->capacityRole()
+                ? $lockedSlot->confirmedCapacityCount()
+                : 0;
+            $isFull = $confirmedCount >= $lockedSlot->capacity;
 
-            if (! $requiresConfirmation && $isFull) {
+            if (! $requiresConfirmation && $isFull && ! $lockedSlot->is_admin_only) {
                 throw ValidationException::withMessages([
                     'slot' => __('This slot is full.'),
                 ]);
@@ -69,7 +74,12 @@ class Shifts
 
             $warnings = [];
 
-            if ($requiresConfirmation && $isFull) {
+            if ($lockedSlot->is_admin_only && $isFull) {
+                $warnings[] = __('This slot is already full (:confirmed / :capacity). Signing up will put it over capacity.', [
+                    'confirmed' => $confirmedCount,
+                    'capacity' => $lockedSlot->capacity,
+                ]);
+            } elseif ($requiresConfirmation && $isFull) {
                 $warnings[] = __('This slot is already full. You can still send a request, and an admin will decide if you get a place.');
             }
 
@@ -105,11 +115,12 @@ class Shifts
                 ->lockForUpdate()
                 ->findOrFail($slot->id);
 
-            Gate::forUser($actor)->authorize('assign', $lockedSlot);
-
             $targetMembership = Membership::query()
                 ->with('user')
+                ->lockForUpdate()
                 ->findOrFail($membership->id);
+
+            Gate::forUser($actor)->authorize('assign', $lockedSlot);
 
             if ($targetMembership->team_id !== $lockedSlot->season->team_id) {
                 throw ValidationException::withMessages([
@@ -122,6 +133,8 @@ class Shifts
                     'assignMembershipId' => __('This member is no longer active on the team.'),
                 ]);
             }
+
+            $this->ensureEligibleForSlot($lockedSlot, $targetMembership, 'assignMembershipId');
 
             $alreadySignedUp = Shift::query()
                 ->where('slot_id', $lockedSlot->id)
@@ -180,17 +193,27 @@ class Shifts
                 ->lockForUpdate()
                 ->findOrFail($shift->slot_id);
 
+            // Demotion locks the membership before it updates any shifts.
+            $targetMembership = Membership::query()
+                ->with('user')
+                ->lockForUpdate()
+                ->findOrFail($shift->membership_id);
+
             $lockedShift = Shift::query()
-                ->with('membership.user')
                 ->lockForUpdate()
                 ->findOrFail($shift->id);
 
-            if ($lockedShift->membership->team_id !== $lockedSlot->season->team_id) {
+            if (
+                $lockedShift->slot_id !== $lockedSlot->id
+                || $lockedShift->membership_id !== $targetMembership->id
+                || $targetMembership->team_id !== $lockedSlot->season->team_id
+            ) {
                 throw ValidationException::withMessages([
                     'shift' => __('This shift does not belong to this team.'),
                 ]);
             }
 
+            $lockedShift->setRelation('membership', $targetMembership);
             Gate::forUser($actor)->authorize('confirm', $lockedShift);
 
             if ($lockedShift->status !== ShiftStatus::Pending) {
@@ -199,8 +222,10 @@ class Shifts
                 ]);
             }
 
+            $this->ensureEligibleForSlot($lockedSlot, $targetMembership, 'shift');
+
             $overlapWarnings = $this->overlaps->checkForMember(
-                $lockedShift->membership->user,
+                $targetMembership->user,
                 $lockedSlot,
                 errorField: 'shift',
                 memberName: $lockedShift->membership->user->name,
@@ -462,12 +487,15 @@ class Shifts
         });
     }
 
-    public function cancelUpcomingForMembership(Membership $membership): void
+    public function cancelUpcomingForMembership(Membership $membership, bool $adminOnly = false): void
     {
         $upcomingShifts = Shift::query()
             ->where('membership_id', $membership->id)
             ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value])
-            ->whereHas('slot', fn (Builder $query): Builder => $query->where('starts_at', '>', now()))
+            ->whereHas('slot', fn (Builder $query): Builder => $query
+                ->where('starts_at', '>', now())
+                ->when($adminOnly, fn (Builder $query): Builder => $query->where('is_admin_only', true)))
+            ->lockForUpdate()
             ->get();
 
         foreach ($upcomingShifts as $shift) {
@@ -518,10 +546,15 @@ class Shifts
         $shift->attendance_recorded_at = null;
     }
 
-    private function resolveActiveMembership(User $user, int $teamId): ?Membership
+    private function ensureEligibleForSlot(Slot $slot, Membership $membership, string $errorField): void
     {
-        return $user->activeMemberships()
-            ->where('team_id', $teamId)
-            ->first();
+        if (
+            $slot->is_admin_only
+            && ($membership->role !== MembershipRole::Admin || $membership->status !== MembershipStatus::Active)
+        ) {
+            throw ValidationException::withMessages([
+                $errorField => __('Only active admins can take this slot.'),
+            ]);
+        }
     }
 }

@@ -16,7 +16,9 @@ class SlotPolicy
 
     public function view(User $user, Slot $slot): bool
     {
-        return $user->activeMemberships()->where('team_id', $slot->season->team_id)->exists();
+        return $slot->is_admin_only
+            ? $user->isAdminOf($slot->season->team_id)
+            : $user->activeMemberships()->where('team_id', $slot->season->team_id)->exists();
     }
 
     public function create(User $user, Season $season): bool
@@ -46,6 +48,6 @@ class SlotPolicy
 
     public function signUp(User $user, Slot $slot): bool
     {
-        return $user->activeMemberships()->where('team_id', $slot->season->team_id)->exists();
+        return $this->view($user, $slot);
     }
 }

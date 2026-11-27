@@ -461,6 +461,7 @@ new class extends Component
             ->unique();
 
         $assignableMemberships = $this->team->activeMemberships()
+            ->when($this->slot->is_admin_only, fn ($query) => $query->where('role', MembershipRole::Admin))
             ->whereNotIn('id', $takenMembershipIds)
             ->with('user')
             ->get()
@@ -538,9 +539,15 @@ new class extends Component
                 : ($confirmedCount === $currentSlot->capacity ? 'zinc' : 'blue');
         @endphp
 
-        <flux:badge size="sm" :color="$capacityBadgeColor" data-test="slot-capacity-badge">
-            {{ $confirmedCount }} / {{ $currentSlot->capacity }}
-        </flux:badge>
+        <div class="flex flex-wrap items-center gap-2">
+            @if ($currentSlot->is_admin_only)
+                <flux:badge size="sm" color="purple">{{ __('Admin-only') }}</flux:badge>
+            @endif
+
+            <flux:badge size="sm" :color="$capacityBadgeColor" data-test="slot-capacity-badge">
+                {{ $confirmedCount }} / {{ $currentSlot->capacity }}
+            </flux:badge>
+        </div>
     </div>
 
     @if ($statusMessage !== null)
