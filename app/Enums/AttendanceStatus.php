@@ -16,4 +16,13 @@ enum AttendanceStatus: string
             self::NoShow => __('No-show'),
         };
     }
+
+    public function badgeColor(): string
+    {
+        return match ($this) {
+            self::Planned => 'green',
+            self::Adjusted => 'blue',
+            self::NoShow => 'red',
+        };
+    }
 }

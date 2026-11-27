@@ -79,7 +79,8 @@ class DayOverview
      */
     private function utcBoundsForDate(string $date, string $timezone): array
     {
-        $dayStartLocal = CarbonImmutable::createFromFormat('!Y-m-d', $date, $timezone);
+        $dayStartLocal = LocalDate::parse($date, $timezone)
+            ?? now()->toImmutable()->setTimezone($timezone)->startOfDay();
         $dayEndLocal = $dayStartLocal->addDay();
 
         return [$dayStartLocal->utc(), $dayEndLocal->utc()];

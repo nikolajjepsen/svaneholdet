@@ -12,6 +12,7 @@ use App\Models\Membership;
 use App\Models\Shift;
 use App\Models\Slot;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Mail;
@@ -465,6 +466,21 @@ class Shifts
 
             return $lockedShift;
         });
+    }
+
+    public function cancelUpcomingForMembership(Membership $membership): void
+    {
+        $upcomingShifts = Shift::query()
+            ->where('membership_id', $membership->id)
+            ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value])
+            ->whereHas('slot', fn (Builder $query): Builder => $query->where('starts_at', '>', now()))
+            ->get();
+
+        foreach ($upcomingShifts as $shift) {
+            $shift->status = ShiftStatus::Cancelled;
+            $this->clearAttendanceFields($shift);
+            $shift->save();
+        }
     }
 
     /**

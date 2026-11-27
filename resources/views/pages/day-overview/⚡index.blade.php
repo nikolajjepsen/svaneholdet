@@ -6,6 +6,7 @@ use App\Models\Slot;
 use App\Models\Team;
 use App\Models\User;
 use App\Scheduling\DayOverview;
+use App\Scheduling\LocalDate;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -59,14 +60,8 @@ new class extends Component
 
     private function resolvedDateLocal(): CarbonImmutable
     {
-        $timezone = $this->team->timezone;
-        $parsed = CarbonImmutable::createFromFormat('!Y-m-d', $this->selectedDate, $timezone);
-
-        if ($parsed !== false && $parsed->format('Y-m-d') === $this->selectedDate) {
-            return $parsed;
-        }
-
-        return now()->toImmutable()->setTimezone($timezone)->startOfDay();
+        return LocalDate::parse($this->selectedDate, $this->team->timezone)
+            ?? now()->toImmutable()->setTimezone($this->team->timezone)->startOfDay();
     }
 
     private function currentSeason(): ?Season
@@ -176,7 +171,7 @@ new class extends Component
                 @php
                     $startsLocal = $slot->starts_at->setTimezone($timezone);
                     $endsLocal = $slot->ends_at->setTimezone($timezone);
-                    $isOvernight = ! $startsLocal->isSameDay($endsLocal);
+                    $isOvernight = ! $startsLocal->isSameDay($endsLocal->subSecond());
                     $startedPreviousDay = $startsLocal->format('Y-m-d') !== $dateKey;
                     $confirmedCount = (int) $slot->confirmed_shifts_count;
                     $pendingCount = (int) $slot->pending_shifts_count;

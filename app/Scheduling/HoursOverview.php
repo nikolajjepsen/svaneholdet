@@ -2,6 +2,7 @@
 
 namespace App\Scheduling;
 
+use App\Enums\HoursMembershipFilter;
 use App\Enums\MembershipStatus;
 use App\Enums\ShiftStatus;
 use App\Models\Membership;
@@ -32,22 +33,22 @@ class HoursOverview
         Season $season,
         ?string $fromDate = null,
         ?string $toDate = null,
-        string $status = 'all',
+        HoursMembershipFilter $status = HoursMembershipFilter::All,
         string $search = '',
         ?CarbonImmutable $now = null,
     ): Collection {
         $referenceNow = $now ?? now()->toImmutable();
         $timezone = $team->timezone;
 
-        $fromUtc = $this->parseLocalDate($fromDate, $timezone)?->utc();
-        $toExclusiveUtc = $this->parseLocalDate($toDate, $timezone)?->addDay()->utc();
+        $fromUtc = LocalDate::parse($fromDate, $timezone)?->utc();
+        $toExclusiveUtc = LocalDate::parse($toDate, $timezone)?->addDay()->utc();
 
         $membershipsQuery = $team->memberships()
             ->with('user');
 
-        if ($status === 'active') {
+        if ($status === HoursMembershipFilter::Active) {
             $membershipsQuery->where('status', MembershipStatus::Active);
-        } elseif ($status === 'removed') {
+        } elseif ($status === HoursMembershipFilter::Removed) {
             $membershipsQuery
                 ->where('status', MembershipStatus::Removed)
                 ->whereHas('shifts.slot', function (Builder $query) use ($season): void {
@@ -119,20 +120,5 @@ class HoursOverview
                 'shifts' => $memberShifts,
             ];
         });
-    }
-
-    private function parseLocalDate(?string $date, string $timezone): ?CarbonImmutable
-    {
-        if ($date === null || $date === '') {
-            return null;
-        }
-
-        $parsed = CarbonImmutable::createFromFormat('!Y-m-d', $date, $timezone);
-
-        if ($parsed === null || $parsed->format('Y-m-d') !== $date) {
-            return null;
-        }
-
-        return $parsed;
     }
 }

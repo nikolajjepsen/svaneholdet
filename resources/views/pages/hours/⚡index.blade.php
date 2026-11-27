@@ -2,6 +2,7 @@
 
 use App\Auth\CurrentTeam;
 use App\Enums\AttendanceStatus;
+use App\Enums\HoursMembershipFilter;
 use App\Enums\MembershipRole;
 use App\Enums\MembershipStatus;
 use App\Models\Season;
@@ -62,7 +63,7 @@ new class extends Component
     {
         $this->fromDate = '';
         $this->toDate = '';
-        $this->status = 'all';
+        $this->status = HoursMembershipFilter::All->value;
         $this->search = '';
     }
 
@@ -84,9 +85,7 @@ new class extends Component
     public function render(HoursOverview $hoursOverview, MemberHours $memberHours): View
     {
         $season = $this->currentSeason();
-        $normalizedStatus = in_array($this->status, ['all', 'active', 'removed'], true)
-            ? $this->status
-            : 'all';
+        $statusFilter = HoursMembershipFilter::tryFrom($this->status) ?? HoursMembershipFilter::All;
 
         $rows = $season !== null
             ? $hoursOverview->forTeam(
@@ -94,14 +93,14 @@ new class extends Component
                 season: $season,
                 fromDate: $this->fromDate !== '' ? $this->fromDate : null,
                 toDate: $this->toDate !== '' ? $this->toDate : null,
-                status: $normalizedStatus,
+                status: $statusFilter,
                 search: $this->search,
             )
             : collect();
 
         $hasActiveFilters = $this->fromDate !== ''
             || $this->toDate !== ''
-            || $normalizedStatus !== 'all'
+            || $statusFilter !== HoursMembershipFilter::All
             || trim($this->search) !== '';
 
         return $this->view([
@@ -139,9 +138,9 @@ new class extends Component
             <flux:field>
                 <flux:label>{{ __('Membership status') }}</flux:label>
                 <flux:select wire:model.live="status" data-test="hours-status-filter">
-                    <option value="all">{{ __('All') }}</option>
-                    <option value="active">{{ __('Active') }}</option>
-                    <option value="removed">{{ __('Removed') }}</option>
+                    @foreach (HoursMembershipFilter::cases() as $filterOption)
+                        <option value="{{ $filterOption->value }}">{{ $filterOption->label() }}</option>
+                    @endforeach
                 </flux:select>
             </flux:field>
 
@@ -276,7 +275,7 @@ new class extends Component
                                     @php
                                         $startsLocal = $shift->slot->starts_at->setTimezone($timezone);
                                         $endsLocal = $shift->slot->ends_at->setTimezone($timezone);
-                                        $isOvernight = ! $startsLocal->isSameDay($endsLocal);
+                                        $isOvernight = ! $startsLocal->isSameDay($endsLocal->subSecond());
                                         $actualStartsLocal = $shift->actual_starts_at?->setTimezone($timezone);
                                         $actualEndsLocal = $shift->actual_ends_at?->setTimezone($timezone);
                                         $recordedLocal = $shift->attendance_recorded_at?->setTimezone($timezone);
@@ -325,21 +324,13 @@ new class extends Component
                                         </div>
 
                                         <div class="flex flex-wrap items-center gap-2">
-                                            @if ($shift->attendance_status === AttendanceStatus::Adjusted)
-                                                <flux:badge size="sm" color="blue" data-test="history-status-{{ $shift->id }}">
-                                                    {{ __('Adjusted') }}
-                                                </flux:badge>
-                                            @elseif ($shift->attendance_status === AttendanceStatus::NoShow)
-                                                <flux:badge size="sm" color="red" data-test="history-status-{{ $shift->id }}">
-                                                    {{ __('No-show') }}
-                                                </flux:badge>
-                                            @elseif ($workedMinutes === null)
+                                            @if ($shift->attendance_status === AttendanceStatus::Planned && $workedMinutes === null)
                                                 <flux:badge size="sm" color="zinc" data-test="history-status-{{ $shift->id }}">
                                                     {{ __('Upcoming') }}
                                                 </flux:badge>
                                             @else
-                                                <flux:badge size="sm" color="green" data-test="history-status-{{ $shift->id }}">
-                                                    {{ __('Planned') }}
+                                                <flux:badge size="sm" :color="$shift->attendance_status->badgeColor()" data-test="history-status-{{ $shift->id }}">
+                                                    {{ $shift->attendance_status->label() }}
                                                 </flux:badge>
                                             @endif
 

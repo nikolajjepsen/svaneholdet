@@ -174,10 +174,7 @@ new class extends Component
         $this->statusMessage = null;
         $this->resetErrorBag();
 
-        $shift = Shift::query()->with('membership')->findOrFail($shiftId);
-        abort_unless($shift->slot_id === $this->slotId, 403);
-        abort_unless($shift->membership->team_id === $this->teamId, 403);
-        Gate::authorize('reject', $shift);
+        $shift = $this->resolveAuthorizedShift($shiftId, 'reject');
 
         $shifts->reject($shift, $this->user());
 
@@ -189,10 +186,7 @@ new class extends Component
         $this->statusMessage = null;
         $this->resetErrorBag();
 
-        $shift = Shift::query()->with('membership')->findOrFail($shiftId);
-        abort_unless($shift->slot_id === $this->slotId, 403);
-        abort_unless($shift->membership->team_id === $this->teamId, 403);
-        Gate::authorize('cancelByAdmin', $shift);
+        $shift = $this->resolveAuthorizedShift($shiftId, 'cancelByAdmin');
 
         $shifts->cancelByAdmin($shift, $this->user());
         unset($this->attendanceTimes[$shiftId]);
@@ -205,10 +199,7 @@ new class extends Component
         $this->statusMessage = null;
         $this->resetErrorBag();
 
-        $shift = Shift::query()->with('membership')->findOrFail($shiftId);
-        abort_unless($shift->slot_id === $this->slotId, 403);
-        abort_unless($shift->membership->team_id === $this->teamId, 403);
-        Gate::authorize('recordAttendance', $shift);
+        $shift = $this->resolveAuthorizedShift($shiftId);
 
         $startKey = "attendanceTimes.{$shiftId}.startTime";
         $endKey = "attendanceTimes.{$shiftId}.endTime";
@@ -239,10 +230,7 @@ new class extends Component
         $this->statusMessage = null;
         $this->resetErrorBag();
 
-        $shift = Shift::query()->with('membership')->findOrFail($shiftId);
-        abort_unless($shift->slot_id === $this->slotId, 403);
-        abort_unless($shift->membership->team_id === $this->teamId, 403);
-        Gate::authorize('recordAttendance', $shift);
+        $shift = $this->resolveAuthorizedShift($shiftId);
 
         $updated = $shifts->markNoShow($shift, $this->user());
 
@@ -255,10 +243,7 @@ new class extends Component
         $this->statusMessage = null;
         $this->resetErrorBag();
 
-        $shift = Shift::query()->with('membership')->findOrFail($shiftId);
-        abort_unless($shift->slot_id === $this->slotId, 403);
-        abort_unless($shift->membership->team_id === $this->teamId, 403);
-        Gate::authorize('recordAttendance', $shift);
+        $shift = $this->resolveAuthorizedShift($shiftId);
 
         $updated = $shifts->resetAttendance($shift, $this->user());
 
@@ -331,10 +316,7 @@ new class extends Component
 
     private function performConfirm(int $shiftId, Shifts $shifts, bool $acceptWarnings): void
     {
-        $shift = Shift::query()->with('membership')->findOrFail($shiftId);
-        abort_unless($shift->slot_id === $this->slotId, 403);
-        abort_unless($shift->membership->team_id === $this->teamId, 403);
-        Gate::authorize('confirm', $shift);
+        $shift = $this->resolveAuthorizedShift($shiftId, 'confirm');
 
         $result = $shifts->confirm($shift, $this->user(), acceptWarnings: $acceptWarnings);
 
@@ -432,6 +414,16 @@ new class extends Component
             'startTime' => $startsAt->setTimezone($timezone)->format('H:i'),
             'endTime' => $endsAt->setTimezone($timezone)->format('H:i'),
         ];
+    }
+
+    private function resolveAuthorizedShift(int $shiftId, string $ability = 'recordAttendance'): Shift
+    {
+        $shift = Shift::query()->with('membership')->findOrFail($shiftId);
+        abort_unless($shift->slot_id === $this->slotId, 403);
+        abort_unless($shift->membership->team_id === $this->teamId, 403);
+        Gate::authorize($ability, $shift);
+
+        return $shift;
     }
 
     private function user(): User
@@ -720,13 +712,9 @@ new class extends Component
                                     </flux:badge>
                                 @endif
 
-                                @if ($shift->attendance_status === AttendanceStatus::Adjusted && $actualStartsLocal !== null && $actualEndsLocal !== null)
-                                    <flux:badge size="sm" color="blue" data-test="attendance-status-{{ $shift->id }}">
-                                        {{ __('Adjusted') }} · {{ $actualStartsLocal->format('H:i') }}–{{ $actualEndsLocal->format('H:i') }}
-                                    </flux:badge>
-                                @elseif ($shift->attendance_status === AttendanceStatus::NoShow)
-                                    <flux:badge size="sm" color="red" data-test="attendance-status-{{ $shift->id }}">
-                                        {{ __('No-show') }}
+                                @if ($shift->hasAttendanceOverride())
+                                    <flux:badge size="sm" :color="$shift->attendance_status->badgeColor()" data-test="attendance-status-{{ $shift->id }}">
+                                        {{ $shift->attendance_status->label() }}@if ($shift->attendance_status === AttendanceStatus::Adjusted && $actualStartsLocal !== null && $actualEndsLocal !== null) · {{ $actualStartsLocal->format('H:i') }}–{{ $actualEndsLocal->format('H:i') }}@endif
                                     </flux:badge>
                                 @endif
 

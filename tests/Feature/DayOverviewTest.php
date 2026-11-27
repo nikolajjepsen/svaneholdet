@@ -342,12 +342,15 @@ it('handles half-open midnight boundaries for 16:00-00:00 and 22:00-02:00 slots'
     $this->actingAs($admin);
 
     // On Aug 5: both slots appear, unique confirmed members = 2 (Alice + Bob).
+    // 16:00–00:00 ends at exact midnight so it must NOT display "Ends next day"; 22:00–02:00 must.
     $component = Livewire::test('pages::day-overview.index')
         ->assertSet('selectedDate', '2027-08-05')
         ->assertSee('16:00–00:00')
         ->assertSee('22:00–02:00')
         ->assertSee('Ends next day')
         ->assertViewHas('uniqueConfirmedMembersCount', 2);
+
+    expect(substr_count($component->html(), 'Ends next day'))->toBe(1);
 
     // On Aug 6: ONLY 22:00–02:00 appears (16:00–00:00 must NOT appear), unique confirmed members = 1 (Bob).
     $component

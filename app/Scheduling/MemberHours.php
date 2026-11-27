@@ -38,27 +38,10 @@ class MemberHours
                 $plannedIntervals[] = [$plannedStart, $plannedEnd];
             }
 
-            if ($shift->attendance_status === AttendanceStatus::NoShow) {
-                continue;
-            }
+            $workedInterval = $this->workedIntervalForShift($shift, $referenceNow);
 
-            if (
-                $shift->attendance_status === AttendanceStatus::Adjusted
-                && $shift->actual_starts_at !== null
-                && $shift->actual_ends_at !== null
-            ) {
-                $actualStart = $shift->actual_starts_at->getTimestamp();
-                $actualEnd = $shift->actual_ends_at->getTimestamp();
-
-                if ($actualEnd > $actualStart) {
-                    $workedIntervals[] = [$actualStart, $actualEnd];
-                }
-
-                continue;
-            }
-
-            if ($slot->ends_at->lessThanOrEqualTo($referenceNow) && $plannedEnd > $plannedStart) {
-                $workedIntervals[] = [$plannedStart, $plannedEnd];
+            if ($workedInterval !== null && $workedInterval[1] > $workedInterval[0]) {
+                $workedIntervals[] = $workedInterval;
             }
         }
 
@@ -81,12 +64,29 @@ class MemberHours
      */
     public function workedMinutesForShift(Shift $shift, ?CarbonImmutable $now = null): ?int
     {
+        $interval = $this->workedIntervalForShift($shift, $now ?? now()->toImmutable());
+
+        if ($interval === null) {
+            return null;
+        }
+
+        return intdiv($interval[1] - $interval[0], 60);
+    }
+
+    /**
+     * Resolve the worked [start, end) interval in Unix seconds for a confirmed shift,
+     * returning [0, 0] for a no-show and null when the shift is not yet eligible.
+     *
+     * @return array{0: int, 1: int}|null
+     */
+    private function workedIntervalForShift(Shift $shift, CarbonImmutable $now): ?array
+    {
         if ($shift->status !== ShiftStatus::Confirmed) {
             return null;
         }
 
         if ($shift->attendance_status === AttendanceStatus::NoShow) {
-            return 0;
+            return [0, 0];
         }
 
         if (
@@ -94,13 +94,19 @@ class MemberHours
             && $shift->actual_starts_at !== null
             && $shift->actual_ends_at !== null
         ) {
-            return max(0, (int) $shift->actual_starts_at->diffInMinutes($shift->actual_ends_at));
+            $actualStart = $shift->actual_starts_at->getTimestamp();
+            $actualEnd = $shift->actual_ends_at->getTimestamp();
+
+            return $actualEnd > $actualStart ? [$actualStart, $actualEnd] : [0, 0];
         }
 
-        $referenceNow = $now ?? now()->toImmutable();
+        $slot = $shift->slot;
 
-        if ($shift->slot->ends_at->lessThanOrEqualTo($referenceNow)) {
-            return $this->plannedMinutesForShift($shift);
+        if ($slot->ends_at->lessThanOrEqualTo($now)) {
+            $plannedStart = $slot->starts_at->getTimestamp();
+            $plannedEnd = $slot->ends_at->getTimestamp();
+
+            return $plannedEnd > $plannedStart ? [$plannedStart, $plannedEnd] : [0, 0];
         }
 
         return null;

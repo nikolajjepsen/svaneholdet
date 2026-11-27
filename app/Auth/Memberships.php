@@ -2,22 +2,23 @@
 
 namespace App\Auth;
 
-use App\Enums\AttendanceStatus;
 use App\Enums\MembershipRole;
 use App\Enums\MembershipStatus;
-use App\Enums\ShiftStatus;
 use App\Models\Membership;
-use App\Models\Shift;
 use App\Models\Team;
 use App\Models\User;
+use App\Scheduling\Shifts;
 use Closure;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
 class Memberships
 {
+    public function __construct(
+        private readonly Shifts $shifts,
+    ) {}
+
     public function promote(Membership $membership, User $actor): void
     {
         $this->mutateActive($membership, $actor, 'promote', function (Membership $locked): void {
@@ -46,18 +47,7 @@ class Memberships
 
             $locked->update(['status' => MembershipStatus::Removed]);
 
-            Shift::query()
-                ->where('membership_id', $locked->id)
-                ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value])
-                ->whereHas('slot', fn (Builder $query): Builder => $query->where('starts_at', '>', now()))
-                ->update([
-                    'status' => ShiftStatus::Cancelled->value,
-                    'attendance_status' => AttendanceStatus::Planned->value,
-                    'actual_starts_at' => null,
-                    'actual_ends_at' => null,
-                    'attendance_recorded_by' => null,
-                    'attendance_recorded_at' => null,
-                ]);
+            $this->shifts->cancelUpcomingForMembership($locked);
         });
     }
 
