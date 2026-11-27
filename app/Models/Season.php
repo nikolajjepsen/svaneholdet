@@ -34,4 +34,10 @@ class Season extends Model
     {
         return $this->hasMany(SlotSeries::class);
     }
+
+    /** @return HasMany<SeasonHourGoal, $this> */
+    public function hourGoals(): HasMany
+    {
+        return $this->hasMany(SeasonHourGoal::class);
+    }
 }

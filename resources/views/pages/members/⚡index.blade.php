@@ -5,10 +5,13 @@ use App\Auth\Invitations;
 use App\Auth\Memberships;
 use App\Enums\InvitationStatus;
 use App\Enums\MembershipRole;
+use App\Enums\MembershipStatus;
 use App\Models\Invitation;
 use App\Models\Membership;
+use App\Models\Season;
 use App\Models\Team;
 use App\Models\User;
+use App\Scheduling\HourGoals;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Session;
@@ -23,6 +26,16 @@ new class extends Component
 
     #[Locked]
     public ?string $statusMessage = null;
+
+    #[Locked]
+    public ?int $hourGoalMembershipId = null;
+
+    #[Locked]
+    public ?int $hourGoalSeasonId = null;
+
+    public bool $showHourGoalModal = false;
+
+    public string $hourGoal = '';
 
     protected Team $team;
 
@@ -43,6 +56,44 @@ new class extends Component
         Gate::authorize('manageMembers', $team);
 
         $this->team = $team;
+    }
+
+    public function editHourGoal(int $membershipId): void
+    {
+        Gate::authorize('manageMembers', $this->team);
+        $season = $this->currentSeason();
+        abort_if($season === null, 403);
+
+        $membership = Membership::query()->findOrFail($membershipId);
+        abort_unless($membership->team_id === $this->teamId && $membership->status === MembershipStatus::Active, 403);
+
+        $this->resetValidation('hourGoal');
+        $this->statusMessage = null;
+        $this->hourGoalMembershipId = $membership->id;
+        $this->hourGoalSeasonId = $season->id;
+        $this->hourGoal = (string) $season->hourGoals()->whereBelongsTo($membership)->first()?->hours;
+        $this->showHourGoalModal = true;
+    }
+
+    public function saveHourGoal(HourGoals $hourGoals): void
+    {
+        Gate::authorize('manageMembers', $this->team);
+        $season = $this->currentSeason();
+        abort_if($season === null || $season->id !== $this->hourGoalSeasonId || $this->hourGoalMembershipId === null, 403);
+
+        $membership = Membership::query()->findOrFail($this->hourGoalMembershipId);
+        $validated = $this->validate([
+            'hourGoal' => ['nullable', 'integer', 'min:0'],
+        ], [
+            'hourGoal.integer' => __('Enter a whole number of hours, 0 or more.'),
+            'hourGoal.min' => __('Enter a whole number of hours, 0 or more.'),
+        ]);
+
+        $hours = $validated['hourGoal'];
+        $hourGoals->setOverride($season, $membership, $this->user(), $hours === null || $hours === '' ? null : (int) $hours);
+
+        $this->reset('showHourGoalModal', 'hourGoalMembershipId', 'hourGoalSeasonId', 'hourGoal');
+        $this->statusMessage = __('Hour goal saved.');
     }
 
     public function resend(int $invitationId, Invitations $invitations): void
@@ -137,6 +188,14 @@ new class extends Component
         return $user;
     }
 
+    private function currentSeason(): ?Season
+    {
+        $this->team->loadMissing('currentSeason');
+        $season = $this->team->currentSeason;
+
+        return $season?->team_id === $this->teamId ? $season : null;
+    }
+
     public function render(): View
     {
         $memberships = $this->team->activeMemberships()
@@ -150,11 +209,16 @@ new class extends Component
             ->oldest('id')
             ->get();
 
+        $season = $this->currentSeason();
+
         return $this->view([
             'team' => $this->team,
             'memberships' => $memberships,
             'invitations' => $invitations,
             'adminCount' => $memberships->where('role', MembershipRole::Admin)->count(),
+            'season' => $season,
+            'hourGoalOverrides' => $season?->hourGoals()->get()->keyBy('membership_id'),
+            'hourGoalMember' => $this->hourGoalMembershipId === null ? null : $memberships->find($this->hourGoalMembershipId),
         ])->title(__('Members'));
     }
 }; ?>
@@ -187,6 +251,9 @@ new class extends Component
         <flux:table.columns>
             <flux:table.column>{{ __('Name') }}</flux:table.column>
             <flux:table.column>{{ __('Role') }}</flux:table.column>
+            @if ($season !== null)
+                <flux:table.column>{{ __('Hour goal') }}</flux:table.column>
+            @endif
             <flux:table.column align="end">{{ __('Actions') }}</flux:table.column>
         </flux:table.columns>
 
@@ -215,6 +282,34 @@ new class extends Component
                             <flux:badge size="sm">{{ __('Volunteer') }}</flux:badge>
                         @endif
                     </flux:table.cell>
+
+                    @if ($season !== null)
+                        @php
+                            $override = $hourGoalOverrides->get($membership->id);
+                            $effectiveGoal = HourGoals::effective($team->settings, $override);
+                        @endphp
+                        <flux:table.cell>
+                            <div class="flex items-center gap-2">
+                                @if ($override?->hours === 0)
+                                    {{ __('Exempt') }}
+                                @elseif ($effectiveGoal === null)
+                                    {{ __('No hour goal') }}
+                                @elseif ($override === null)
+                                    {{ __(':hours h (team default)', ['hours' => $effectiveGoal]) }}
+                                @else
+                                    {{ __(':hours h (custom)', ['hours' => $effectiveGoal]) }}
+                                @endif
+                                <flux:button
+                                    size="sm"
+                                    variant="ghost"
+                                    wire:click="editHourGoal({{ $membership->id }})"
+                                    data-test="edit-hour-goal-{{ $membership->id }}"
+                                >
+                                    {{ __('Edit hour goal') }}
+                                </flux:button>
+                            </div>
+                        </flux:table.cell>
+                    @endif
 
                     <flux:table.cell align="end">
                         <div class="flex justify-end gap-2">
@@ -273,6 +368,10 @@ new class extends Component
                         @endif
                     </flux:table.cell>
 
+                    @if ($season !== null)
+                        <flux:table.cell />
+                    @endif
+
                     <flux:table.cell align="end">
                         <div class="flex justify-end gap-2">
                             <flux:button
@@ -298,4 +397,31 @@ new class extends Component
             @endforeach
         </flux:table.rows>
     </flux:table>
+
+    @if ($season !== null)
+        <flux:modal wire:model="showHourGoalModal" class="w-full max-w-md">
+            <form wire:submit="saveHourGoal" class="space-y-5">
+                <div>
+                    <flux:heading size="lg">{{ __('Edit hour goal') }}</flux:heading>
+                    <flux:text class="mt-1">{{ $hourGoalMember?->user->name }} · {{ $season->name }}</flux:text>
+                </div>
+
+                <flux:field>
+                    <flux:label>{{ __('Hour goal') }}</flux:label>
+                    <flux:description>{{ __('Leave blank to inherit the team default. Enter 0 to exempt this member for the season.') }}</flux:description>
+                    <flux:input type="number" name="hourGoal" min="0" step="1" wire:model="hourGoal" />
+                    <flux:error name="hourGoal" />
+                </flux:field>
+
+                <div class="flex justify-end gap-2">
+                    <flux:modal.close>
+                        <flux:button type="button" variant="ghost">{{ __('Cancel') }}</flux:button>
+                    </flux:modal.close>
+                    <flux:button type="submit" variant="primary" data-test="save-hour-goal">
+                        {{ __('Save') }}
+                    </flux:button>
+                </div>
+            </form>
+        </flux:modal>
+    @endif
 </section>
