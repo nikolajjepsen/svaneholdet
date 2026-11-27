@@ -8,6 +8,8 @@ use App\Models\Shift;
 use App\Models\Slot;
 use App\Models\Team;
 use App\Models\User;
+use App\Scheduling\HourGoals;
+use App\Scheduling\MemberHours;
 use App\Scheduling\Shifts;
 use App\Scheduling\Slots;
 use Illuminate\Support\Facades\Auth;
@@ -191,7 +193,7 @@ new class extends Component
         return $user;
     }
 
-    public function render(): View
+    public function render(MemberHours $memberHours): View
     {
         $season = $this->currentSeason();
         $user = $this->user();
@@ -202,6 +204,18 @@ new class extends Component
         $membership = $user->activeMemberships()
             ->whereBelongsTo($this->team)
             ->first();
+
+        $memberShifts = $season !== null && $membership !== null
+            ? $membership->shifts()
+                ->whereRelation('slot', 'season_id', $season->id)
+                ->whereIn('status', [ShiftStatus::Confirmed, ShiftStatus::Pending])
+                ->with('slot')
+                ->get()
+            : collect();
+
+        $goalHours = $season !== null && $membership !== null
+            ? HourGoals::effectiveForMember($this->team->settings, $season, $membership)
+            : null;
 
         $days = collect();
 
@@ -247,6 +261,8 @@ new class extends Component
         return $this->view([
             'team' => $this->team,
             'season' => $season,
+            'hoursSummary' => $memberHours->summarize($memberShifts),
+            'goalHours' => $goalHours,
             'isAdmin' => $isAdmin,
             'timezone' => $timezone,
             'showConfirmedVolunteerNames' => $showConfirmedVolunteerNames,
@@ -290,6 +306,8 @@ new class extends Component
             @endcan
         @endif
     </div>
+
+    <x-hour-goal-progress :summary="$hoursSummary" :goal-hours="$goalHours" />
 
     @if ($statusMessage !== null)
         <flux:callout icon="check-circle" color="green" role="status">

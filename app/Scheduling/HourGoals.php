@@ -21,6 +21,11 @@ class HourGoals
         };
     }
 
+    public static function effectiveForMember(TeamSettings $settings, Season $season, Membership $membership): ?int
+    {
+        return self::effective($settings, $season->hourGoals()->whereBelongsTo($membership)->first());
+    }
+
     public function setOverride(Season $season, Membership $membership, User $actor, ?int $hours): void
     {
         Gate::forUser($actor)->authorize('update', $season);

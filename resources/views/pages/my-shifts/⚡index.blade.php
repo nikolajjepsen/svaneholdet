@@ -4,9 +4,9 @@ use App\Auth\CurrentTeam;
 use App\Models\Shift;
 use App\Models\Team;
 use App\Models\User;
+use App\Scheduling\HourGoals;
 use App\Scheduling\MemberHours;
 use App\Scheduling\Shifts;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -86,16 +86,19 @@ new class extends Component
             ->whereBelongsTo($this->team)
             ->first();
 
-        $currentSeasonId = $this->team->current_season_id;
+        $this->team->loadMissing('currentSeason');
+        $season = $this->team->currentSeason;
 
-        $shifts = ($membership === null || $currentSeasonId === null)
+        $shifts = ($membership === null || $season === null)
             ? collect()
             : $membership->shifts()
-                ->whereHas('slot', function (Builder $query) use ($currentSeasonId): void {
-                    $query->where('season_id', $currentSeasonId);
-                })
+                ->whereRelation('slot', 'season_id', $season->id)
                 ->with('slot')
                 ->get();
+
+        $goalHours = $season !== null && $membership !== null
+            ? HourGoals::effectiveForMember($this->team->settings, $season, $membership)
+            : null;
 
         $hoursSummary = $memberHours->summarize($shifts, $now);
 
@@ -113,6 +116,7 @@ new class extends Component
             'team' => $this->team,
             'timezone' => $timezone,
             'hoursSummary' => $hoursSummary,
+            'goalHours' => $goalHours,
             'memberHours' => $memberHours,
             'now' => $now,
             'upcomingShifts' => $upcomingShifts,
@@ -126,6 +130,8 @@ new class extends Component
         <flux:heading size="xl" level="1">{{ __('My shifts') }}</flux:heading>
         <flux:text class="mt-1">{{ $team->name }}</flux:text>
     </div>
+
+    <x-hour-goal-progress :summary="$hoursSummary" :goal-hours="$goalHours" />
 
     <div class="grid gap-4 sm:grid-cols-2" data-test="my-shifts-hours-summary">
         <flux:card>
