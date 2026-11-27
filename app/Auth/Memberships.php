@@ -7,6 +7,7 @@ use App\Enums\MembershipStatus;
 use App\Models\Membership;
 use App\Models\Team;
 use App\Models\User;
+use App\Scheduling\Shifts;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -14,6 +15,10 @@ use Illuminate\Validation\ValidationException;
 
 class Memberships
 {
+    public function __construct(
+        private readonly Shifts $shifts,
+    ) {}
+
     public function promote(Membership $membership, User $actor): void
     {
         $this->mutateActive($membership, $actor, 'promote', function (Membership $locked): void {
@@ -41,6 +46,8 @@ class Memberships
             }
 
             $locked->update(['status' => MembershipStatus::Removed]);
+
+            $this->shifts->cancelUpcomingForMembership($locked);
         });
     }
 

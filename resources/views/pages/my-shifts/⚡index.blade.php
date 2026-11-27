@@ -1,10 +1,10 @@
 <?php
 
 use App\Auth\CurrentTeam;
-use App\Enums\ShiftStatus;
 use App\Models\Shift;
 use App\Models\Team;
 use App\Models\User;
+use App\Scheduling\MemberHours;
 use App\Scheduling\Shifts;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -76,11 +76,11 @@ new class extends Component
         return $user;
     }
 
-    public function render(): View
+    public function render(MemberHours $memberHours): View
     {
         $user = $this->user();
         $timezone = $this->team->timezone;
-        $now = now();
+        $now = now()->toImmutable();
 
         $membership = $user->activeMemberships()
             ->whereBelongsTo($this->team)
@@ -97,6 +97,8 @@ new class extends Component
                 ->with('slot')
                 ->get();
 
+        $hoursSummary = $memberHours->summarize($shifts, $now);
+
         $upcomingShifts = $shifts
             ->filter(fn (Shift $shift): bool => $shift->slot->ends_at->greaterThanOrEqualTo($now))
             ->sortBy(fn (Shift $shift): int => $shift->slot->starts_at->getTimestamp())
@@ -110,6 +112,9 @@ new class extends Component
         return $this->view([
             'team' => $this->team,
             'timezone' => $timezone,
+            'hoursSummary' => $hoursSummary,
+            'memberHours' => $memberHours,
+            'now' => $now,
             'upcomingShifts' => $upcomingShifts,
             'pastShifts' => $pastShifts,
         ])->title(__('My shifts'));
@@ -120,6 +125,22 @@ new class extends Component
     <div>
         <flux:heading size="xl" level="1">{{ __('My shifts') }}</flux:heading>
         <flux:text class="mt-1">{{ $team->name }}</flux:text>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2" data-test="my-shifts-hours-summary">
+        <flux:card>
+            <flux:text class="text-sm">{{ __('Planned hours') }}</flux:text>
+            <div class="mt-1 text-2xl font-semibold text-zinc-900 dark:text-white" data-test="my-planned-hours">
+                {{ $hoursSummary->plannedFormatted() }}
+            </div>
+        </flux:card>
+
+        <flux:card>
+            <flux:text class="text-sm">{{ __('Worked hours') }}</flux:text>
+            <div class="mt-1 text-2xl font-semibold text-zinc-900 dark:text-white" data-test="my-worked-hours">
+                {{ $hoursSummary->workedFormatted() }}
+            </div>
+        </flux:card>
     </div>
 
     @if ($statusMessage !== null)
@@ -144,62 +165,14 @@ new class extends Component
         @else
             <div class="space-y-3">
                 @foreach ($upcomingShifts as $shift)
-                    @php
-                        $startsLocal = $shift->slot->starts_at->setTimezone($timezone);
-                        $endsLocal = $shift->slot->ends_at->setTimezone($timezone);
-                        $hours = rtrim(rtrim(number_format($shift->slot->plannedHours(), 2, '.', ''), '0'), '.');
-                        $badgeColor = match ($shift->status) {
-                            ShiftStatus::Confirmed => 'green',
-                            ShiftStatus::Pending => 'amber',
-                            ShiftStatus::Rejected => 'red',
-                            ShiftStatus::Cancelled => 'zinc',
-                        };
-                    @endphp
-
-                    <flux:card wire:key="upcoming-shift-{{ $shift->id }}" data-test="upcoming-shift-{{ $shift->id }}">
-                        <div class="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                                <div class="font-medium text-zinc-900 dark:text-white capitalize">
-                                    {{ $startsLocal->translatedFormat('l j. F Y') }}
-                                </div>
-                                <flux:text class="mt-0.5">
-                                    {{ $startsLocal->format('H:i') }}–{{ $endsLocal->format('H:i') }} · {{ __(':hours h', ['hours' => $hours]) }}
-                                </flux:text>
-                            </div>
-
-                            <div class="flex flex-wrap items-center gap-2">
-                                <flux:badge size="sm" :color="$badgeColor">
-                                    {{ $shift->status->label() }}
-                                </flux:badge>
-
-                                @if ($shift->status === ShiftStatus::Confirmed)
-                                    @if ($shift->slot->isBeforeCancellationDeadline($team))
-                                        <flux:button
-                                            variant="ghost"
-                                            size="sm"
-                                            wire:click="cancelShift({{ $shift->id }})"
-                                            data-test="cancel-shift-{{ $shift->id }}"
-                                        >
-                                            {{ __('Cancel shift') }}
-                                        </flux:button>
-                                    @else
-                                        <flux:text class="text-xs" data-test="contact-admin-to-cancel-shift-{{ $shift->id }}">
-                                            {{ __('Contact an admin to cancel.') }}
-                                        </flux:text>
-                                    @endif
-                                @elseif ($shift->status === ShiftStatus::Pending)
-                                    <flux:button
-                                        variant="ghost"
-                                        size="sm"
-                                        wire:click="withdrawShift({{ $shift->id }})"
-                                        data-test="withdraw-shift-{{ $shift->id }}"
-                                    >
-                                        {{ __('Withdraw') }}
-                                    </flux:button>
-                                @endif
-                            </div>
-                        </div>
-                    </flux:card>
+                    <x-my-shifts.shift-card
+                        :shift="$shift"
+                        :team="$team"
+                        :timezone="$timezone"
+                        :member-hours="$memberHours"
+                        :now="$now"
+                        section="upcoming"
+                    />
                 @endforeach
             </div>
         @endif
@@ -215,47 +188,14 @@ new class extends Component
         @else
             <div class="space-y-3">
                 @foreach ($pastShifts as $shift)
-                    @php
-                        $startsLocal = $shift->slot->starts_at->setTimezone($timezone);
-                        $endsLocal = $shift->slot->ends_at->setTimezone($timezone);
-                        $hours = rtrim(rtrim(number_format($shift->slot->plannedHours(), 2, '.', ''), '0'), '.');
-                        $badgeColor = match ($shift->status) {
-                            ShiftStatus::Confirmed => 'green',
-                            ShiftStatus::Pending => 'amber',
-                            ShiftStatus::Rejected => 'red',
-                            ShiftStatus::Cancelled => 'zinc',
-                        };
-                    @endphp
-
-                    <flux:card wire:key="past-shift-{{ $shift->id }}" data-test="past-shift-{{ $shift->id }}">
-                        <div class="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                                <div class="font-medium text-zinc-900 dark:text-white capitalize">
-                                    {{ $startsLocal->translatedFormat('l j. F Y') }}
-                                </div>
-                                <flux:text class="mt-0.5">
-                                    {{ $startsLocal->format('H:i') }}–{{ $endsLocal->format('H:i') }} · {{ __(':hours h', ['hours' => $hours]) }}
-                                </flux:text>
-                            </div>
-
-                            <div class="flex flex-wrap items-center gap-2">
-                                <flux:badge size="sm" :color="$badgeColor">
-                                    {{ $shift->status->label() }}
-                                </flux:badge>
-
-                                @if ($shift->status === ShiftStatus::Pending)
-                                    <flux:button
-                                        variant="ghost"
-                                        size="sm"
-                                        wire:click="withdrawShift({{ $shift->id }})"
-                                        data-test="withdraw-shift-{{ $shift->id }}"
-                                    >
-                                        {{ __('Withdraw') }}
-                                    </flux:button>
-                                @endif
-                            </div>
-                        </div>
-                    </flux:card>
+                    <x-my-shifts.shift-card
+                        :shift="$shift"
+                        :team="$team"
+                        :timezone="$timezone"
+                        :member-hours="$memberHours"
+                        :now="$now"
+                        section="past"
+                    />
                 @endforeach
             </div>
         @endif

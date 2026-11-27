@@ -64,3 +64,29 @@ _Avoid_: Places, seats, requested volunteers
 **Shift**:
 One **Member**'s place on one **Slot**. It is pending, confirmed, rejected or cancelled. A pending **Shift** is what people call a request, which an **Admin** confirms or rejects. An **Admin** assigning a **Member** creates a confirmed **Shift**.
 _Avoid_: Signup, booking, registration, approved
+
+### Staffing and hours
+
+**Day overview**:
+The **Admin** view of a single day's **Slots**, showing each **Slot**'s confirmed and pending **Shifts** and the day's total unique confirmed **Members**.
+_Avoid_: Staffing view, daily dashboard
+
+**Attendance**:
+Whether and when a **Member** worked a confirmed **Shift**. By default it follows the **Slot**'s planned times; an **Admin** only intervenes to adjust actual times or mark a **No-show**.
+_Avoid_: Check-in, presence, time log
+
+**No-show**:
+An **Attendance** state where a **Member** did not turn up for a confirmed **Shift**, counting as zero **Worked hours**.
+_Avoid_: Absent, missed shift
+
+**Planned hours**:
+The total scheduled duration of a **Member**'s confirmed **Shifts**, counting overlapping time once.
+_Avoid_: Scheduled hours, expected hours
+
+**Worked hours**:
+The total actual duration of a **Member**'s ended (or adjusted) confirmed **Shifts**, using adjusted times when edited, zero for a **No-show**, and planned times by default, counting overlapping time once.
+_Avoid_: Recorded hours, working hours, actual hours, logged hours
+
+**Hours overview**:
+The **Admin** view of every **Member**'s **Planned hours**, **Worked hours**, and **Shift** history for the **Season**.
+_Avoid_: Timesheet, hour report

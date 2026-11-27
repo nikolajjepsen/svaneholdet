@@ -1,6 +1,7 @@
 <?php
 
 use App\Auth\CurrentTeam;
+use App\Enums\AttendanceStatus;
 use App\Models\Membership;
 use App\Models\Shift;
 use App\Models\Slot;
@@ -8,6 +9,7 @@ use App\Models\Team;
 use App\Models\User;
 use App\Scheduling\Shifts;
 use App\Scheduling\Slots;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -55,6 +57,9 @@ new class extends Component
 
     public bool $notifyMembersOnDelete = true;
 
+    /** @var array<int, array{startTime: string, endTime: string}> */
+    public array $attendanceTimes = [];
+
     protected Team $team;
 
     protected Slot $slot;
@@ -75,6 +80,8 @@ new class extends Component
         $this->startTime = $slot->starts_at->setTimezone($team->timezone)->format('H:i');
         $this->endTime = $slot->ends_at->setTimezone($team->timezone)->format('H:i');
         $this->capacity = $slot->capacity;
+
+        $this->syncAttendanceTimes(overwriteExisting: true);
     }
 
     public function hydrate(CurrentTeam $currentTeam): void
@@ -167,10 +174,7 @@ new class extends Component
         $this->statusMessage = null;
         $this->resetErrorBag();
 
-        $shift = Shift::query()->with('membership')->findOrFail($shiftId);
-        abort_unless($shift->slot_id === $this->slotId, 403);
-        abort_unless($shift->membership->team_id === $this->teamId, 403);
-        Gate::authorize('reject', $shift);
+        $shift = $this->resolveAuthorizedShift($shiftId, 'reject');
 
         $shifts->reject($shift, $this->user());
 
@@ -182,14 +186,69 @@ new class extends Component
         $this->statusMessage = null;
         $this->resetErrorBag();
 
-        $shift = Shift::query()->with('membership')->findOrFail($shiftId);
-        abort_unless($shift->slot_id === $this->slotId, 403);
-        abort_unless($shift->membership->team_id === $this->teamId, 403);
-        Gate::authorize('cancelByAdmin', $shift);
+        $shift = $this->resolveAuthorizedShift($shiftId, 'cancelByAdmin');
 
         $shifts->cancelByAdmin($shift, $this->user());
+        unset($this->attendanceTimes[$shiftId]);
 
         $this->statusMessage = __('Shift cancelled.');
+    }
+
+    public function saveAttendance(int $shiftId, Shifts $shifts): void
+    {
+        $this->statusMessage = null;
+        $this->resetErrorBag();
+
+        $shift = $this->resolveAuthorizedShift($shiftId);
+
+        $startKey = "attendanceTimes.{$shiftId}.startTime";
+        $endKey = "attendanceTimes.{$shiftId}.endTime";
+
+        $this->validate([
+            $startKey => ['required', 'date_format:H:i'],
+            $endKey => ['required', 'date_format:H:i'],
+        ]);
+
+        $startTime = (string) ($this->attendanceTimes[$shiftId]['startTime'] ?? '');
+        $endTime = (string) ($this->attendanceTimes[$shiftId]['endTime'] ?? '');
+
+        $updated = $shifts->adjustAttendance(
+            shift: $shift,
+            actor: $this->user(),
+            startTime: $startTime,
+            endTime: $endTime,
+            startErrorKey: $startKey,
+            endErrorKey: $endKey,
+        );
+
+        $this->setShiftAttendanceInputs($updated);
+        $this->statusMessage = __('Attendance updated.');
+    }
+
+    public function markNoShow(int $shiftId, Shifts $shifts): void
+    {
+        $this->statusMessage = null;
+        $this->resetErrorBag();
+
+        $shift = $this->resolveAuthorizedShift($shiftId);
+
+        $updated = $shifts->markNoShow($shift, $this->user());
+
+        $this->setShiftAttendanceInputs($updated);
+        $this->statusMessage = __('Marked as no-show.');
+    }
+
+    public function resetAttendance(int $shiftId, Shifts $shifts): void
+    {
+        $this->statusMessage = null;
+        $this->resetErrorBag();
+
+        $shift = $this->resolveAuthorizedShift($shiftId);
+
+        $updated = $shifts->resetAttendance($shift, $this->user());
+
+        $this->setShiftAttendanceInputs($updated);
+        $this->statusMessage = __('Attendance reset to planned.');
     }
 
     public function acceptOverCapacityWarning(Shifts $shifts, Slots $slots): void
@@ -257,10 +316,7 @@ new class extends Component
 
     private function performConfirm(int $shiftId, Shifts $shifts, bool $acceptWarnings): void
     {
-        $shift = Shift::query()->with('membership')->findOrFail($shiftId);
-        abort_unless($shift->slot_id === $this->slotId, 403);
-        abort_unless($shift->membership->team_id === $this->teamId, 403);
-        Gate::authorize('confirm', $shift);
+        $shift = $this->resolveAuthorizedShift($shiftId, 'confirm');
 
         $result = $shifts->confirm($shift, $this->user(), acceptWarnings: $acceptWarnings);
 
@@ -291,6 +347,7 @@ new class extends Component
             $this->slot = $result->slot;
             $this->startTime = $result->slot->starts_at->setTimezone($this->team->timezone)->format('H:i');
             $this->endTime = $result->slot->ends_at->setTimezone($this->team->timezone)->format('H:i');
+            $this->syncAttendanceTimes(overwriteExisting: true);
         }
 
         $this->statusMessage = __('Slot times updated.');
@@ -327,6 +384,48 @@ new class extends Component
         $this->showOverCapacityModal = true;
     }
 
+    /**
+     * @param  Collection<int, Shift>|null  $confirmedShifts
+     */
+    private function syncAttendanceTimes(bool $overwriteExisting = false, ?Collection $confirmedShifts = null): void
+    {
+        $shifts = $confirmedShifts ?? $this->slot->confirmedShifts()->get();
+
+        foreach ($shifts as $shift) {
+            if (! $overwriteExisting && array_key_exists($shift->id, $this->attendanceTimes)) {
+                continue;
+            }
+
+            $this->setShiftAttendanceInputs($shift);
+        }
+    }
+
+    private function setShiftAttendanceInputs(Shift $shift): void
+    {
+        $timezone = $this->team->timezone;
+        $startsAt = $shift->attendance_status === AttendanceStatus::Adjusted && $shift->actual_starts_at !== null
+            ? $shift->actual_starts_at
+            : $this->slot->starts_at;
+        $endsAt = $shift->attendance_status === AttendanceStatus::Adjusted && $shift->actual_ends_at !== null
+            ? $shift->actual_ends_at
+            : $this->slot->ends_at;
+
+        $this->attendanceTimes[$shift->id] = [
+            'startTime' => $startsAt->setTimezone($timezone)->format('H:i'),
+            'endTime' => $endsAt->setTimezone($timezone)->format('H:i'),
+        ];
+    }
+
+    private function resolveAuthorizedShift(int $shiftId, string $ability = 'recordAttendance'): Shift
+    {
+        $shift = Shift::query()->with('membership')->findOrFail($shiftId);
+        abort_unless($shift->slot_id === $this->slotId, 403);
+        abort_unless($shift->membership->team_id === $this->teamId, 403);
+        Gate::authorize($ability, $shift);
+
+        return $shift;
+    }
+
     private function user(): User
     {
         $user = Auth::user();
@@ -340,11 +439,13 @@ new class extends Component
         $timezone = $this->team->timezone;
 
         $confirmedShifts = $this->slot->confirmedShifts()
-            ->with('membership.user')
+            ->with(['membership.user', 'attendanceRecordedBy'])
             ->orderBy('confirmed_at')
             ->orderBy('id')
             ->get()
             ->values();
+
+        $this->syncAttendanceTimes(overwriteExisting: false, confirmedShifts: $confirmedShifts);
 
         $pendingShifts = $this->slot->pendingShifts()
             ->with('membership.user')
@@ -445,9 +546,9 @@ new class extends Component
         </flux:callout>
     @endif
 
-    @if ($errors->has('shift') || $errors->has('slot'))
+    @if ($errors->has('shift') || $errors->has('slot') || $errors->has('attendance'))
         <flux:callout icon="exclamation-circle" color="red" role="alert">
-            <flux:callout.text>{{ $errors->first('shift') ?: $errors->first('slot') }}</flux:callout.text>
+            <flux:callout.text>{{ $errors->first('shift') ?: $errors->first('slot') ?: $errors->first('attendance') }}</flux:callout.text>
         </flux:callout>
     @endif
 
@@ -590,7 +691,12 @@ new class extends Component
         @else
             <div class="space-y-2">
                 @foreach ($confirmedShifts as $index => $shift)
-                    <flux:card wire:key="confirmed-shift-{{ $shift->id }}" data-test="confirmed-shift-{{ $shift->id }}">
+                    @php
+                        $actualStartsLocal = $shift->actual_starts_at?->setTimezone($team->timezone);
+                        $actualEndsLocal = $shift->actual_ends_at?->setTimezone($team->timezone);
+                        $recordedLocal = $shift->attendance_recorded_at?->setTimezone($team->timezone);
+                    @endphp
+                    <flux:card wire:key="confirmed-shift-{{ $shift->id }}" data-test="confirmed-shift-{{ $shift->id }}" class="space-y-4">
                         <div class="flex flex-wrap items-center justify-between gap-3">
                             <div>
                                 <div class="font-medium text-zinc-900 dark:text-white">
@@ -603,6 +709,12 @@ new class extends Component
                                 @if ($index >= $currentSlot->capacity)
                                     <flux:badge size="sm" color="amber" data-test="over-capacity-badge-{{ $shift->id }}">
                                         {{ __('Over capacity') }}
+                                    </flux:badge>
+                                @endif
+
+                                @if ($shift->hasAttendanceOverride())
+                                    <flux:badge size="sm" :color="$shift->attendance_status->badgeColor()" data-test="attendance-status-{{ $shift->id }}">
+                                        {{ $shift->attendance_status->label() }}@if ($shift->attendance_status === AttendanceStatus::Adjusted && $actualStartsLocal !== null && $actualEndsLocal !== null) · {{ $actualStartsLocal->format('H:i') }}–{{ $actualEndsLocal->format('H:i') }}@endif
                                     </flux:badge>
                                 @endif
 
@@ -619,6 +731,80 @@ new class extends Component
                                     {{ __('Cancel shift') }}
                                 </flux:button>
                             </div>
+                        </div>
+
+                        <div class="border-t border-zinc-200 pt-3 dark:border-zinc-700 space-y-2">
+                            <form
+                                wire:submit="saveAttendance({{ $shift->id }})"
+                                class="flex flex-wrap items-end gap-3"
+                            >
+                                <flux:field class="w-32">
+                                    <flux:label>{{ __('Actual start') }}</flux:label>
+                                    <flux:input
+                                        type="time"
+                                        name="attendanceStartTime{{ $shift->id }}"
+                                        wire:model="attendanceTimes.{{ $shift->id }}.startTime"
+                                        data-test="attendance-start-{{ $shift->id }}"
+                                        required
+                                    />
+                                    <flux:error name="attendanceTimes.{{ $shift->id }}.startTime" />
+                                </flux:field>
+
+                                <flux:field class="w-32">
+                                    <flux:label>{{ __('Actual end') }}</flux:label>
+                                    <flux:input
+                                        type="time"
+                                        name="attendanceEndTime{{ $shift->id }}"
+                                        wire:model="attendanceTimes.{{ $shift->id }}.endTime"
+                                        data-test="attendance-end-{{ $shift->id }}"
+                                        required
+                                    />
+                                    <flux:error name="attendanceTimes.{{ $shift->id }}.endTime" />
+                                </flux:field>
+
+                                <div class="flex flex-wrap items-center gap-2 pb-0.5">
+                                    <flux:button
+                                        type="submit"
+                                        variant="primary"
+                                        size="sm"
+                                        data-test="attendance-save-{{ $shift->id }}"
+                                    >
+                                        {{ __('Save') }}
+                                    </flux:button>
+
+                                    <flux:button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        wire:click="markNoShow({{ $shift->id }})"
+                                        data-test="attendance-no-show-{{ $shift->id }}"
+                                    >
+                                        {{ __('No-show') }}
+                                    </flux:button>
+
+                                    @if ($shift->hasAttendanceOverride())
+                                        <flux:button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            wire:click="resetAttendance({{ $shift->id }})"
+                                            data-test="attendance-reset-{{ $shift->id }}"
+                                        >
+                                            {{ __('Reset to planned') }}
+                                        </flux:button>
+                                    @endif
+                                </div>
+                            </form>
+
+                            @if ($shift->hasAttendanceOverride() && $recordedLocal !== null)
+                                <flux:text class="text-xs" data-test="attendance-audit-{{ $shift->id }}">
+                                    @if ($shift->attendanceRecordedBy !== null)
+                                        {{ __('Edited by :name on :time', ['name' => $shift->attendanceRecordedBy->name, 'time' => $recordedLocal->translatedFormat('j. M Y H:i')]) }}
+                                    @else
+                                        {{ __('Edited on :time', ['time' => $recordedLocal->translatedFormat('j. M Y H:i')]) }}
+                                    @endif
+                                </flux:text>
+                            @endif
                         </div>
                     </flux:card>
                 @endforeach

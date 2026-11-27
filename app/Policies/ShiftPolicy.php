@@ -64,6 +64,11 @@ class ShiftPolicy
         return $user->isAdminOf($shift->membership->team_id);
     }
 
+    public function recordAttendance(User $user, Shift $shift): bool
+    {
+        return $user->isAdminOf($shift->membership->team_id);
+    }
+
     public function withdraw(User $user, Shift $shift): bool
     {
         if ($shift->membership->user_id !== $user->id) {

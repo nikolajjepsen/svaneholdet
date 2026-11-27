@@ -2,6 +2,7 @@
 
 namespace App\Scheduling;
 
+use App\Enums\AttendanceStatus;
 use App\Enums\MembershipStatus;
 use App\Enums\ShiftStatus;
 use App\Mail\ShiftCancelledMail;
@@ -11,6 +12,7 @@ use App\Models\Membership;
 use App\Models\Shift;
 use App\Models\Slot;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Mail;
@@ -327,6 +329,7 @@ class Shifts
             }
 
             $lockedShift->status = ShiftStatus::Cancelled;
+            $this->clearAttendanceFields($lockedShift);
             $lockedShift->save();
 
             return $lockedShift;
@@ -362,6 +365,7 @@ class Shifts
             }
 
             $lockedShift->status = ShiftStatus::Cancelled;
+            $this->clearAttendanceFields($lockedShift);
             $lockedShift->save();
 
             return [
@@ -378,6 +382,67 @@ class Shifts
         }
 
         return $result['shift'];
+    }
+
+    public function adjustAttendance(
+        Shift $shift,
+        User $actor,
+        string $startTime,
+        string $endTime,
+        string $startErrorKey = 'actualStartTime',
+        string $endErrorKey = 'actualEndTime',
+    ): Shift {
+        return DB::transaction(function () use ($shift, $actor, $startTime, $endTime, $startErrorKey, $endErrorKey): Shift {
+            [$lockedSlot, $lockedShift] = $this->lockConfirmedShiftForAttendance($shift, $actor);
+
+            $window = SlotWindow::fromActualTimes(
+                plannedStartsAt: $lockedSlot->starts_at,
+                startTime: $startTime,
+                endTime: $endTime,
+                timezone: $lockedSlot->season->team->timezone,
+                startErrorKey: $startErrorKey,
+                endErrorKey: $endErrorKey,
+            );
+
+            $lockedShift->update([
+                'attendance_status' => AttendanceStatus::Adjusted,
+                'actual_starts_at' => $window->startsAt,
+                'actual_ends_at' => $window->endsAt,
+                'attendance_recorded_by' => $actor->id,
+                'attendance_recorded_at' => now(),
+            ]);
+
+            return $lockedShift;
+        });
+    }
+
+    public function markNoShow(Shift $shift, User $actor): Shift
+    {
+        return DB::transaction(function () use ($shift, $actor): Shift {
+            [, $lockedShift] = $this->lockConfirmedShiftForAttendance($shift, $actor);
+
+            $lockedShift->update([
+                'attendance_status' => AttendanceStatus::NoShow,
+                'actual_starts_at' => null,
+                'actual_ends_at' => null,
+                'attendance_recorded_by' => $actor->id,
+                'attendance_recorded_at' => now(),
+            ]);
+
+            return $lockedShift;
+        });
+    }
+
+    public function resetAttendance(Shift $shift, User $actor): Shift
+    {
+        return DB::transaction(function () use ($shift, $actor): Shift {
+            [, $lockedShift] = $this->lockConfirmedShiftForAttendance($shift, $actor);
+
+            $this->clearAttendanceFields($lockedShift);
+            $lockedShift->save();
+
+            return $lockedShift;
+        });
     }
 
     public function withdraw(Shift $shift, User $actor): Shift
@@ -401,6 +466,62 @@ class Shifts
 
             return $lockedShift;
         });
+    }
+
+    public function cancelUpcomingForMembership(Membership $membership): void
+    {
+        $upcomingShifts = Shift::query()
+            ->where('membership_id', $membership->id)
+            ->whereIn('status', [ShiftStatus::Pending->value, ShiftStatus::Confirmed->value])
+            ->whereHas('slot', fn (Builder $query): Builder => $query->where('starts_at', '>', now()))
+            ->get();
+
+        foreach ($upcomingShifts as $shift) {
+            $shift->status = ShiftStatus::Cancelled;
+            $this->clearAttendanceFields($shift);
+            $shift->save();
+        }
+    }
+
+    /**
+     * @return array{0: Slot, 1: Shift}
+     */
+    private function lockConfirmedShiftForAttendance(Shift $shift, User $actor): array
+    {
+        $lockedSlot = Slot::query()
+            ->with('season.team')
+            ->lockForUpdate()
+            ->findOrFail($shift->slot_id);
+
+        $lockedShift = Shift::query()
+            ->with('membership')
+            ->lockForUpdate()
+            ->findOrFail($shift->id);
+
+        if ($lockedShift->membership->team_id !== $lockedSlot->season->team_id) {
+            throw ValidationException::withMessages([
+                'attendance' => __('This shift does not belong to this team.'),
+            ]);
+        }
+
+        Gate::forUser($actor)->authorize('recordAttendance', $lockedShift);
+
+        if ($lockedShift->status !== ShiftStatus::Confirmed) {
+            throw ValidationException::withMessages([
+                'attendance' => __('Attendance can only be edited on confirmed shifts.'),
+            ]);
+        }
+
+        return [$lockedSlot, $lockedShift];
+    }
+
+    private function clearAttendanceFields(Shift $shift): void
+    {
+        $shift->attendance_status = AttendanceStatus::Planned;
+        $shift->actual_starts_at = null;
+        $shift->actual_ends_at = null;
+        $shift->attendance_recorded_by = null;
+        $shift->attendance_recorded_at = null;
     }
 
     private function resolveActiveMembership(User $user, int $teamId): ?Membership

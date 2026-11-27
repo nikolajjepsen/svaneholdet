@@ -2,11 +2,16 @@
 
 use App\Enums\MembershipRole;
 use App\Enums\MembershipStatus;
+use App\Enums\ShiftStatus;
 use App\Mail\InvitationMail;
 use App\Models\Invitation;
 use App\Models\Membership;
+use App\Models\Season;
+use App\Models\Shift;
+use App\Models\Slot;
 use App\Models\Team;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 use Livewire\Livewire;
@@ -488,4 +493,129 @@ it('renders the member list in Danish for Danish users', function () {
         ->assertSee('Fjern')
         ->assertSee('Send igen')
         ->assertSee('Træk tilbage');
+});
+
+it('cancels upcoming pending and confirmed shifts without emailing when removing a member while preserving started and past shifts', function () {
+    $this->travelTo(CarbonImmutable::parse('2027-08-05 12:00:00', 'Europe/Copenhagen'));
+
+    $season = Season::factory()->for($this->team)->create();
+    $this->team->update(['current_season_id' => $season->id]);
+    $volunteer = User::factory()->create(['name' => 'Bob Volunteer']);
+    $volunteerMembership = Membership::factory()->for($volunteer)->for($this->team)->create();
+
+    $upcomingConfirmedSlot = Slot::factory()->for($season)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-05 14:00:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-05 18:00:00', 'Europe/Copenhagen')->utc(),
+    ]);
+    $upcomingPendingSlot = Slot::factory()->for($season)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-06 08:00:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-06 12:00:00', 'Europe/Copenhagen')->utc(),
+    ]);
+    $upcomingRejectedSlot = Slot::factory()->for($season)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-06 14:00:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-06 18:00:00', 'Europe/Copenhagen')->utc(),
+    ]);
+    $upcomingCancelledSlot = Slot::factory()->for($season)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-07 08:00:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-07 12:00:00', 'Europe/Copenhagen')->utc(),
+    ]);
+    $startedNowSlot = Slot::factory()->for($season)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-05 12:00:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-05 16:00:00', 'Europe/Copenhagen')->utc(),
+    ]);
+    $pastSlot = Slot::factory()->for($season)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-04 08:00:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-04 12:00:00', 'Europe/Copenhagen')->utc(),
+    ]);
+
+    $upcomingConfirmed = Shift::factory()->confirmed()->for($upcomingConfirmedSlot)->for($volunteerMembership)->create();
+    $upcomingPending = Shift::factory()->pending()->for($upcomingPendingSlot)->for($volunteerMembership)->create();
+    $upcomingRejected = Shift::factory()->rejected()->for($upcomingRejectedSlot)->for($volunteerMembership)->create();
+    $upcomingCancelled = Shift::factory()->cancelled()->for($upcomingCancelledSlot)->for($volunteerMembership)->create();
+    $startedConfirmed = Shift::factory()->confirmed()->for($startedNowSlot)->for($volunteerMembership)->create();
+    $pastConfirmed = Shift::factory()->confirmed()->for($pastSlot)->for($volunteerMembership)->create();
+
+    $this->actingAs($this->admin);
+
+    Livewire::test('pages::members.index')
+        ->call('remove', $volunteerMembership->id)
+        ->assertHasNoErrors();
+
+    expect($volunteerMembership->fresh()->status)->toBe(MembershipStatus::Removed)
+        ->and($upcomingConfirmed->fresh()->status)->toBe(ShiftStatus::Cancelled)
+        ->and($upcomingPending->fresh()->status)->toBe(ShiftStatus::Cancelled)
+        ->and($upcomingRejected->fresh()->status)->toBe(ShiftStatus::Rejected)
+        ->and($upcomingCancelled->fresh()->status)->toBe(ShiftStatus::Cancelled)
+        ->and($startedConfirmed->fresh()->status)->toBe(ShiftStatus::Confirmed)
+        ->and($pastConfirmed->fresh()->status)->toBe(ShiftStatus::Confirmed);
+
+    Mail::assertNothingSent();
+});
+
+it('frees up slot capacity immediately when a removed member has their upcoming shift cancelled', function () {
+    $this->travelTo(CarbonImmutable::parse('2027-08-05 10:00:00', 'Europe/Copenhagen'));
+
+    $season = Season::factory()->for($this->team)->create();
+    $this->team->update(['current_season_id' => $season->id]);
+    $slot = Slot::factory()->for($season)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-05 14:00:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-05 18:00:00', 'Europe/Copenhagen')->utc(),
+        'capacity' => 1,
+    ]);
+
+    $removedVolunteer = User::factory()->create(['name' => 'Bob Volunteer']);
+    $removedMembership = Membership::factory()->for($removedVolunteer)->for($this->team)->create();
+    Shift::factory()->confirmed()->for($slot)->for($removedMembership)->create();
+
+    $replacement = User::factory()->create(['name' => 'Carol Replacement']);
+    $replacementMembership = Membership::factory()->for($replacement)->for($this->team)->create();
+
+    $this->actingAs($this->admin);
+    Livewire::test('pages::members.index')
+        ->call('remove', $removedMembership->id)
+        ->assertHasNoErrors();
+
+    $this->actingAs($replacement);
+    Livewire::test('pages::schedule.index')
+        ->call('signUp', $slot->id)
+        ->assertHasNoErrors();
+
+    expect(Shift::query()
+        ->where('slot_id', $slot->id)
+        ->where('membership_id', $replacementMembership->id)
+        ->where('status', ShiftStatus::Confirmed)
+        ->exists())->toBeTrue();
+});
+
+it('does not cancel a removed member\'s upcoming shifts on another team', function () {
+    $this->travelTo(CarbonImmutable::parse('2027-08-05 10:00:00', 'Europe/Copenhagen'));
+
+    $teamSeason = Season::factory()->for($this->team)->create();
+    $this->team->update(['current_season_id' => $teamSeason->id]);
+    $otherSeason = Season::factory()->for($this->otherTeam)->create();
+    $this->otherTeam->update(['current_season_id' => $otherSeason->id]);
+
+    $volunteer = User::factory()->create(['name' => 'Bob Volunteer']);
+    $teamMembership = Membership::factory()->for($volunteer)->for($this->team)->create();
+    $otherTeamMembership = Membership::factory()->for($volunteer)->for($this->otherTeam)->create();
+
+    $teamSlot = Slot::factory()->for($teamSeason)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-06 08:00:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-06 12:00:00', 'Europe/Copenhagen')->utc(),
+    ]);
+    $otherSlot = Slot::factory()->for($otherSeason)->create([
+        'starts_at' => CarbonImmutable::parse('2027-08-06 08:00:00', 'Europe/Copenhagen')->utc(),
+        'ends_at' => CarbonImmutable::parse('2027-08-06 12:00:00', 'Europe/Copenhagen')->utc(),
+    ]);
+
+    $teamShift = Shift::factory()->confirmed()->for($teamSlot)->for($teamMembership)->create();
+    $otherShift = Shift::factory()->confirmed()->for($otherSlot)->for($otherTeamMembership)->create();
+
+    $this->actingAs($this->admin);
+    Livewire::test('pages::members.index')
+        ->call('remove', $teamMembership->id)
+        ->assertHasNoErrors();
+
+    expect($teamShift->fresh()->status)->toBe(ShiftStatus::Cancelled)
+        ->and($otherShift->fresh()->status)->toBe(ShiftStatus::Confirmed);
 });
