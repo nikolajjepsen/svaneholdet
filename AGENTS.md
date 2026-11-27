@@ -24,7 +24,8 @@ Single-context, with the glossary at `docs/GLOSSARY.md` and ADRs in `docs/adr/`.
 
 ## Verifying your work
 
-- Start Postgres with `docker compose up -d` before running anything. Tests run against real Postgres in that container, because seat locking and constraints only behave correctly there. Each checkout gets its own test database, created on the first run by `tests/bootstrap.php`, so worktrees can run tests at the same time.
+- Run `composer worktree:setup` in a fresh checkout or worktree, and again after pulling main. It installs `vendor/` and `node_modules/`, adds missing `.env` keys from `.env.example`, links `public/storage`, builds assets when they are missing, and starts Postgres. It is safe to run again.
+- Tests run against real Postgres, because seat locking and constraints only behave correctly there. The setup command reuses any Postgres already answering on port 5432 and only starts the `compose.yaml` container when nothing does. All checkouts share that container, so never run `docker compose down -v`: it deletes every checkout's data. Each checkout gets its own test database, created on the first run by `tests/bootstrap.php`, so worktrees can run tests at the same time.
 - `composer test` is the gate: it must pass before every commit.
 - Every user flow a feature adds gets a browser test in `tests/Browser`, ending in `assertNoSmoke()`. Run `npm run build` first when assets changed. `->screenshot()` shows you the page when a browser test fails.
 - Eager-load every relation you read. Outside production, Eloquent runs in strict mode and throws on lazy loading and on unknown attributes.

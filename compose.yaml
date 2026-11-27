@@ -1,3 +1,8 @@
+# A fixed project name makes every worktree share these containers,
+# so `docker compose up -d` in a worktree reuses them instead of
+# failing on a port that is already taken.
+name: svaneholdet
+
 services:
   postgres:
     image: postgres:17
